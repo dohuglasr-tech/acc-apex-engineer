@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Python virtual environments & PyInstaller artifacts
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+build/
+dist/
+*.spec
+
+# Next.js build output
+.next/
+out/
+
+# Environment variables
+.env
+.env*.local
+
+# Local agent config
+agent_config.json
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vercel

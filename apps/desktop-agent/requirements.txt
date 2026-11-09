@@ -1,0 +1,4 @@
+websockets==13.1
+requests==2.32.3
+pyttsx3==2.98
+pyinstaller==6.11.1
