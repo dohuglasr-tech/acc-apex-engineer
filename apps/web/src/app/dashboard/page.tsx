@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { useTelemetry } from "@/lib/telemetry-store";
+import { InputMode, useTelemetry } from "@/lib/telemetry-store";
 import { LiveMoTeCGauges } from "@/components/LiveMoTeCGauges";
 import { LapTelemetryChart } from "@/components/LapTelemetryChart";
 import { QRMobileConnect } from "@/components/QRMobileConnect";
@@ -15,97 +15,219 @@ function formatLapTime(ms: number): string {
 }
 
 export default function DashboardPage() {
-  const { frame, trace, isAccLive, agentConnected, liveAlert } = useTelemetry();
+  const {
+    frame,
+    trace,
+    isAccLive,
+    agentConnected,
+    liveAlert,
+    inputMode,
+    setInputMode,
+    profile,
+    setups,
+    drivingErrors,
+  } = useTelemetry();
+
+  const modeLabel =
+    inputMode === "keyboard"
+      ? "TECLADO"
+      : inputMode === "gamepad"
+      ? "MANDO / CONTROLADOR"
+      : "VOLANTE Y PEDALES";
 
   if (!isAccLive || !frame) {
     return (
-      <div className="space-y-12">
-        {/* Tabla limpia en espera estilo F1 Standings */}
+      <div className="space-y-10">
+        {/* Encabezado de la Guía Paso a Paso */}
+        <div className="border-b border-zinc-800 pb-6 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-[#E10600]">
+              GUÍA DE ACTIVACIÓN PASO A PASO // FLUJO DIRECTO
+            </div>
+            <h1 className="text-xl font-semibold text-white mt-1">
+              Cómo activar la Telemetría y Auto-Inyección en Assetto Corsa Competizione
+            </h1>
+            <p className="text-xs text-zinc-400 mt-1">
+              Sigue estos 4 pasos en orden. Los indicadores cambian a verde automáticamente en cuanto cada paso se detecta activo.
+            </p>
+          </div>
+
+          <a
+            href="/downloads/ACC_Apex_Engineer.exe"
+            download="ACC_Apex_Engineer.exe"
+            className="px-6 py-2.5 rounded-full bg-[#E10600] hover:bg-[#b80500] text-xs font-semibold text-white tracking-wide transition"
+          >
+            Descargar ACC_Apex_Engineer.exe
+          </a>
+        </div>
+
+        {/* Tabla/Lista de Pasos 1 -> 2 -> 3 -> 4 estilo F1 Standings */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse tabular-nums">
+          <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-zinc-800 text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
-                <th className="py-3 pr-4">CANAL</th>
-                <th className="py-3 px-4">MÓDULO DE TELEMETRÍA</th>
-                <th className="py-3 px-4">ORIGEN</th>
-                <th className="py-3 px-4">FRECUENCIA</th>
-                <th className="py-3 pl-4 text-right">ESTADO</th>
+                <th className="py-3 pr-4">PASO</th>
+                <th className="py-3 px-4">INSTRUCCIÓN PARA EL PILOTO</th>
+                <th className="py-3 px-4">ACCIÓN RÁPIDA</th>
+                <th className="py-3 pl-4 text-right">ESTADO ACTUAL</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-900 text-xs">
-              <tr>
-                <td className="py-4 pr-4 font-mono text-zinc-500">01</td>
-                <td className="py-4 px-4 font-medium text-white">
-                  Agente de Escritorio (.EXE)
+              {/* PASO 1 */}
+              <tr className="hover:bg-zinc-950/60 transition">
+                <td className="py-5 pr-4 font-mono text-zinc-400 align-top">
+                  PASO 01
                 </td>
-                <td className="py-4 px-4 font-mono text-zinc-400">
-                  ws://localhost:8765
+                <td className="py-5 px-4 align-top max-w-md">
+                  <div className="font-semibold text-white text-sm">
+                    1. Selecciona tu Periférico de Conducción
+                  </div>
+                  <p className="text-zinc-400 mt-1 leading-relaxed">
+                    Elige con qué conduces para que el agente adapte el reparto de frenada, el Steer Ratio, el control de tracción y las alturas del setup a tu mando, teclado o volante.
+                  </p>
                 </td>
-                <td className="py-4 px-4 font-mono text-zinc-400">60 FPS</td>
-                <td className="py-4 pl-4 text-right font-mono">
-                  <span
-                    className={
-                      agentConnected ? "text-emerald-400" : "text-zinc-500"
-                    }
-                  >
-                    {agentConnected ? "CONECTADO" : "ESPERANDO AGENTE"}
+                <td className="py-5 px-4 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(
+                      [
+                        { id: "keyboard", label: "Teclado" },
+                        { id: "gamepad", label: "Mando" },
+                        { id: "wheel", label: "Volante" },
+                      ] as { id: InputMode; label: string }[]
+                    ).map((m) => {
+                      const active = (inputMode || "gamepad") === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => setInputMode(m.id)}
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-medium border transition ${
+                            active
+                              ? "border-[#E10600] bg-[#E10600]/15 text-white"
+                              : "border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-white"
+                          }`}
+                        >
+                          {m.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </td>
+                <td className="py-5 pl-4 text-right font-mono align-top">
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/40 text-emerald-400 text-[10px] uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    COMPLETADO ({modeLabel})
                   </span>
                 </td>
               </tr>
-              <tr>
-                <td className="py-4 pr-4 font-mono text-zinc-500">02</td>
-                <td className="py-4 px-4 font-medium text-white">
-                  Memoria Compartida de Físicas ACC
+
+              {/* PASO 2 */}
+              <tr className="hover:bg-zinc-950/60 transition">
+                <td className="py-5 pr-4 font-mono text-zinc-400 align-top">
+                  PASO 02
                 </td>
-                <td className="py-4 px-4 font-mono text-zinc-400">
-                  Local\acpmf_physics
+                <td className="py-5 px-4 align-top max-w-md">
+                  <div className="font-semibold text-white text-sm">
+                    2. Abre el programa ACC_Apex_Engineer.exe en tu PC
+                  </div>
+                  <p className="text-zinc-400 mt-1 leading-relaxed">
+                    Descarga y abre <code className="text-white font-mono">ACC_Apex_Engineer.exe</code>. Ya incluye tu cuenta (<span className="text-white">{profile?.discord_username || "dgvla"}</span>) pre-vinculada automáticamente.{" "}
+                    <strong className="text-white">Importante:</strong> Déjalo abierto en segundo plano mientras juegas.
+                  </p>
                 </td>
-                <td className="py-4 px-4 font-mono text-zinc-400">333 HZ</td>
-                <td className="py-4 pl-4 text-right font-mono text-zinc-500">
-                  EN ESPERA (ABRE ACC)
+                <td className="py-5 px-4 align-top">
+                  <a
+                    href="/downloads/ACC_Apex_Engineer.exe"
+                    download="ACC_Apex_Engineer.exe"
+                    className="inline-block px-4 py-1.5 rounded-full border border-zinc-600 hover:border-white text-xs font-medium text-white transition"
+                  >
+                    Descargar .EXE
+                  </a>
+                </td>
+                <td className="py-5 pl-4 text-right font-mono align-top">
+                  {agentConnected ? (
+                    <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/40 text-emerald-400 text-[10px] uppercase tracking-wider">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      CONECTADO EN TU PC
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-[#E10600] text-white text-[10px] uppercase tracking-wider">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#E10600] animate-pulse" />
+                      PENDIENTE — ABRE EL .EXE
+                    </span>
+                  )}
                 </td>
               </tr>
-              <tr>
-                <td className="py-4 pr-4 font-mono text-zinc-500">03</td>
-                <td className="py-4 px-4 font-medium text-white">
-                  Auto-Inyector de Setups en Tiempo Real
+
+              {/* PASO 3 */}
+              <tr className="hover:bg-zinc-950/60 transition">
+                <td className="py-5 pr-4 font-mono text-zinc-400 align-top">
+                  PASO 03
                 </td>
-                <td className="py-4 px-4 font-mono text-zinc-400">
-                  Documents\Assetto Corsa Competizione\Setups
+                <td className="py-5 px-4 align-top max-w-md">
+                  <div className="font-semibold text-white text-sm">
+                    3. Abre Assetto Corsa Competizione y pulsa CONDUCIR (DRIVE)
+                  </div>
+                  <p className="text-zinc-400 mt-1 leading-relaxed">
+                    Inicia cualquier sesión en ACC (Práctica, Hotlap o Carrera) y entra a la pista. En el instante en que tu coche esté en pista, esta pantalla mostrará automáticamente las revoluciones, presiones Pirelli DHE y temperaturas en tiempo real.
+                  </p>
                 </td>
-                <td className="py-4 px-4 font-mono text-zinc-400">AL CERRAR VUELTA</td>
-                <td className="py-4 pl-4 text-right font-mono text-zinc-500">
-                  LISTO
+                <td className="py-5 px-4 align-top font-mono text-[11px] text-zinc-400">
+                  Lectura automática a 333 Hz
+                </td>
+                <td className="py-5 pl-4 text-right font-mono align-top">
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-zinc-700 text-zinc-400 text-[10px] uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    ESPERANDO QUE ENTRES A PISTA
+                  </span>
+                </td>
+              </tr>
+
+              {/* PASO 4 */}
+              <tr className="hover:bg-zinc-950/60 transition">
+                <td className="py-5 pr-4 font-mono text-zinc-400 align-top">
+                  PASO 04
+                </td>
+                <td className="py-5 px-4 align-top max-w-md">
+                  <div className="font-semibold text-white text-sm">
+                    4. Completa 1 vuelta para recibir tu Setup Auto-Inyectado
+                  </div>
+                  <p className="text-zinc-400 mt-1 leading-relaxed">
+                    Al cruzar la línea de meta, el ingeniero de pista te hablará por radio y guardará automáticamente el setup optimizado{" "}
+                    <code className="text-white font-mono">APEX_AUTO_LIVE.json</code> dentro de la carpeta oficial de tu juego (<code className="text-zinc-300 font-mono">Documentos\Assetto Corsa Competizione\Setups</code>).
+                  </p>
+                </td>
+                <td className="py-5 px-4 align-top">
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href="/coach"
+                      className="px-3.5 py-1.5 rounded-full border border-zinc-800 hover:border-zinc-500 text-xs text-zinc-300 hover:text-white transition"
+                    >
+                      Ver Diagnósticos ({drivingErrors.length})
+                    </Link>
+                    <Link
+                      href="/setups"
+                      className="px-3.5 py-1.5 rounded-full border border-zinc-800 hover:border-zinc-500 text-xs text-zinc-300 hover:text-white transition"
+                    >
+                      Ver Setups ({setups.length})
+                    </Link>
+                  </div>
+                </td>
+                <td className="py-5 pl-4 text-right font-mono align-top">
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-zinc-800 text-zinc-500 text-[10px] uppercase tracking-wider">
+                    LISTO PARA AUTO-INYECTAR
+                  </span>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <div className="py-12 border-t border-b border-zinc-900 text-center space-y-5">
-          <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-zinc-500">
-            SIN SESIÓN DE PISTA ACTIVA DETECTADA
+        {/* Si ya hay una vuelta o traza previa guardada en la sesión del usuario, mostrar resumen debajo */}
+        {trace && trace.length > 0 && (
+          <div className="pt-4">
+            <LapTelemetryChart trace={trace} />
           </div>
-          <p className="text-sm text-zinc-300 max-w-lg mx-auto leading-relaxed">
-            La aplicación se encuentra en espera limpia. Ejecuta el agente local y
-            entra a pista en Assetto Corsa Competizione para iniciar la lectura en
-            tiempo real a 333 Hz.
-          </p>
-          <div className="pt-2 flex items-center justify-center gap-4">
-            <Link
-              href="/download"
-              className="px-6 py-2.5 rounded-full border border-zinc-600 hover:border-white text-xs font-medium text-white transition"
-            >
-              Descargar Agente PC
-            </Link>
-            <Link
-              href="/onboarding"
-              className="px-6 py-2.5 rounded-full border border-zinc-800 hover:border-zinc-500 text-xs font-medium text-zinc-300 hover:text-white transition"
-            >
-              Configurar Periférico
-            </Link>
-          </div>
-        </div>
+        )}
 
         <QRMobileConnect />
       </div>

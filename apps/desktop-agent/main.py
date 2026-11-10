@@ -1,9 +1,8 @@
 """
 ACC Apex Engineer Pro - Orquestador Principal del Agente Ejecutable Local (main.py)
-  - Bucle de lectura de Memoria Compartida de ACC a 333 Hz (cada 3 ms)
-  - Sin simulaciones artificiales: permanece en espera limpia hasta que ACC entra en pista
-  - Confirmación visual inmediata y latido de conexión (heartbeat) hacia Supabase
-  - Servidor WebSocket Local a 60 FPS (ws://0.0.0.0:8765)
+  - Bucle de lectura de Memoria Compartida de ACC a 333 Hz (cada 3 ms) usando OpenFileMappingW
+  - Puente híbrido: WebSocket local 60 FPS + Sincronización Cloud en vivo cada 1.2s vía Supabase
+    (garantiza que la web en https://*.vercel.app reciba telemetría en vivo sin bloqueos HTTPS)
   - Auto-Inyector de Setups en tiempo real en Documents\\Assetto Corsa Competizione\\Setups
 """
 
@@ -23,12 +22,13 @@ from auto_setup_injector import AutoSetupInjector
 from overlay_hud import OverlayHUD
 from shm_reader import ACCSharedMemoryReader, TelemetrySample
 from telemetry_analyzer import CompletedLapAnalysis, TelemetryLapAnalyzer
-from ui_selector import InputModeSelectorWindow, load_agent_config
+from ui_selector import InputModeSelectorWindow, load_agent_config, save_agent_config
 from voice_engineer import VoiceEngineer
 
 
 class SupabaseCloudSync:
     def __init__(self, config: Dict[str, Any]) -> None:
+        self._push_in_flight = False
         self.update_config(config)
 
     def update_config(self, config: Dict[str, Any]) -> None:
@@ -57,7 +57,7 @@ class SupabaseCloudSync:
             if on_done:
                 on_done(
                     True,
-                    "Agente activo en modo local (333 Hz). Abre Assetto Corsa Competizione y entra a pista.",
+                    "Agente activo en modo local (333 Hz).",
                     "",
                 )
             return
@@ -76,29 +76,62 @@ class SupabaseCloudSync:
                 )
                 if resp.ok:
                     data = resp.json() if resp.text else {}
-                    username = ""
-                    if isinstance(data, dict):
-                        username = data.get("discord_username") or ""
+                    username = (
+                        data.get("discord_username", "")
+                        if isinstance(data, dict)
+                        else ""
+                    )
                     if on_done:
                         on_done(
                             True,
-                            "Sincronizado con la web y Supabase. Abre Assetto Corsa Competizione y sal a pista; el agente inyectará los setups automáticamente.",
+                            "Sincronizado con la web. Abre ACC y entra a pista.",
                             username,
                         )
                 else:
                     if on_done:
                         on_done(
                             False,
-                            "Agente local activo, pero el Token no coincide con ninguna cuenta en Supabase. Verifica el token en la pestaña Agente PC.",
+                            "Token no encontrado en Supabase. Copia el token desde la web.",
                             "",
                         )
             except Exception:
                 if on_done:
                     on_done(
                         True,
-                        "Configuración guardada localmente. Escuchando Assetto Corsa Competizione a 333 Hz.",
+                        "Configuración activa localmente.",
                         "",
                     )
+
+        threading.Thread(target=_task, daemon=True).start()
+
+    def push_live_state_async(
+        self,
+        is_live: bool,
+        input_mode: str,
+        live_payload: Optional[Dict[str, Any]],
+    ) -> None:
+        if not self.is_configured or self._push_in_flight:
+            return
+
+        self._push_in_flight = True
+
+        def _task() -> None:
+            try:
+                requests.post(
+                    f"{self.supabase_url}/rest/v1/rpc/agent_push_live_state",
+                    headers=self._headers(),
+                    json={
+                        "p_agent_token": self.agent_token,
+                        "p_is_live": is_live,
+                        "p_input_mode": input_mode,
+                        "p_live_telemetry": live_payload if is_live else None,
+                    },
+                    timeout=4,
+                )
+            except Exception:
+                pass
+            finally:
+                self._push_in_flight = False
 
         threading.Thread(target=_task, daemon=True).start()
 
@@ -168,7 +201,8 @@ class SupabaseCloudSync:
 class ApexDesktopAgentApp:
     def __init__(self) -> None:
         self.config = load_agent_config()
-        initial_mode = self.config.get("input_mode") or "wheel"
+        save_agent_config(self.config)
+        initial_mode = self.config.get("input_mode") or "gamepad"
 
         self.shm_reader = ACCSharedMemoryReader()
         self.analyzer = TelemetryLapAnalyzer(input_mode=initial_mode)
@@ -181,7 +215,8 @@ class ApexDesktopAgentApp:
         self.latest_lap_event: Optional[Dict[str, Any]] = None
         self.running = True
         self._ws_clients: Set[Any] = set()
-        self._last_heartbeat: float = 0.0
+        self._last_cloud_push_ts: float = 0.0
+        self._was_live_last_push: bool = False
 
         self.root = tk.Tk()
         self.selector_ui = InputModeSelectorWindow(
@@ -201,20 +236,18 @@ class ApexDesktopAgentApp:
         )
         self._ws_thread.start()
 
-        # Si ya tenía configuración guardada de antes, validarla automáticamente al abrir
-        if self.config.get("input_mode") in ("keyboard", "gamepad", "wheel"):
-            self._on_config_applied(self.config)
+        # Validar y vincular automáticamente al iniciar
+        self._on_config_applied(self.config)
 
         self.root.after(50, self._refresh_hud_loop)
 
     def _on_config_applied(self, updated_cfg: Dict[str, Any]) -> None:
-        mode = updated_cfg.get("input_mode") or "wheel"
+        mode = updated_cfg.get("input_mode") or "gamepad"
         self.analyzer.set_input_mode(mode)
         self.injector.set_input_mode(mode)
         self.hud.set_input_mode(mode)
         self.voice.enabled = bool(updated_cfg.get("voice_enabled", True))
         self.cloud_sync.update_config(updated_cfg)
-        self._last_heartbeat = time.time()
 
         def _ui_callback(success: bool, msg: str, username: str) -> None:
             try:
@@ -238,10 +271,9 @@ class ApexDesktopAgentApp:
             sample = self.shm_reader.read_sample()
             self.latest_sample = sample
             if sample is not None and sample.is_live_acc:
-                if self.config.get("input_mode") in ("keyboard", "gamepad", "wheel"):
-                    completed_lap = self.analyzer.process_sample(sample)
-                    if completed_lap is not None:
-                        self._handle_completed_lap(completed_lap)
+                completed_lap = self.analyzer.process_sample(sample)
+                if completed_lap is not None:
+                    self._handle_completed_lap(completed_lap)
             elapsed = time.perf_counter() - t0
             sleep_for = target_dt - elapsed
             if sleep_for > 0:
@@ -303,25 +335,36 @@ class ApexDesktopAgentApp:
 
     def _refresh_hud_loop(self) -> None:
         sample = self.latest_sample
-        self.hud.update_telemetry(sample, self.analyzer.live_alert if sample else None)
-        if sample is not None and sample.is_live_acc:
+        is_live = bool(sample is not None and sample.is_live_acc)
+        self.hud.update_telemetry(sample, self.analyzer.live_alert if is_live else None)
+
+        if is_live and sample is not None:
             self.selector_ui.set_live_connection_status(
-                True, sample.track_name, sample.car_model
+                True, sample.track_name, sample.car_model, sample.speed_kmh
             )
         else:
             self.selector_ui.set_live_connection_status(False)
 
-        # Latido cada 15s hacia Supabase mientras el agente esté abierto y configurado
+        # Puente Cloud en vivo hacia Supabase:
+        # - Cada 1.2s cuando el coche está en pista (transmite telemetría en vivo a Vercel HTTPS)
+        # - Cada 10s cuando está en espera (mantiene el estado AGENTE CONECTADO en la web)
         now = time.time()
-        if (
-            now - self._last_heartbeat > 15.0
-            and self.cloud_sync.is_configured
-            and self.config.get("input_mode") in ("keyboard", "gamepad", "wheel")
+        interval = 1.2 if is_live else 10.0
+        if (now - self._last_cloud_push_ts) >= interval or (
+            is_live != self._was_live_last_push
         ):
-            self._last_heartbeat = now
-            self.cloud_sync.sync_input_mode_async(
-                self.config["input_mode"], self.config.get("wheel_type", "")
-            )
+            self._last_cloud_push_ts = now
+            self._was_live_last_push = is_live
+            mode = self.config.get("input_mode") or "gamepad"
+            live_payload = None
+            if is_live and sample is not None:
+                live_payload = {
+                    "sample": sample.to_dict(),
+                    "live_alert": self.analyzer.live_alert,
+                    "live_trace": self.analyzer.live_trace,
+                    "live_errors": self.analyzer.live_errors,
+                }
+            self.cloud_sync.push_live_state_async(is_live, mode, live_payload)
 
         if self.running:
             self.root.after(50, self._refresh_hud_loop)
@@ -337,6 +380,9 @@ class ApexDesktopAgentApp:
                             "input_mode"
                         ) in ("keyboard", "gamepad", "wheel"):
                             self.config["input_mode"] = cmd["input_mode"]
+                            if cmd.get("agent_token"):
+                                self.config["agent_token"] = cmd["agent_token"]
+                            save_agent_config(self.config)
                             self._on_config_applied(self.config)
                     except Exception:
                         pass
@@ -354,9 +400,11 @@ class ApexDesktopAgentApp:
                             {
                                 "type": "telemetry_frame",
                                 "is_live_acc": True,
-                                "input_mode": self.config.get("input_mode") or "wheel",
+                                "input_mode": self.config.get("input_mode") or "gamepad",
                                 "live_alert": self.analyzer.live_alert,
                                 "sample": sample.to_dict(),
+                                "live_trace": self.analyzer.live_trace,
+                                "live_errors": self.analyzer.live_errors,
                                 "latest_setup": self.latest_setup_event,
                                 "latest_lap": self.latest_lap_event,
                             }
@@ -366,7 +414,7 @@ class ApexDesktopAgentApp:
                             {
                                 "type": "telemetry_standby",
                                 "is_live_acc": False,
-                                "input_mode": self.config.get("input_mode") or None,
+                                "input_mode": self.config.get("input_mode") or "gamepad",
                             }
                         )
                     stale = set()

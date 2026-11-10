@@ -1,12 +1,10 @@
 """
 ACC Apex Engineer Pro - Lector de Memoria Compartida a 333 Hz (shm_reader.py)
-Usa exclusivamente Win32 OpenFileMappingW(FILE_MAP_READ) + MapViewOfFile(FILE_MAP_READ)
+Usa exclusivamente Win32 OpenFileMappingW(FILE_MAP_READ) + MapViewOfFile(FILE_MAP_READ, 0, 0, 0)
 para NUNCA crear ni bloquear los bloques de memoria antes que Assetto Corsa Competizione:
   - Local\\acpmf_physics
   - Local\\acpmf_graphics
   - Local\\acpmf_static
-Esto evita por completo el crash EXCEPTION_ACCESS_VIOLATION (0x0000000000000000) en AC Physics Thread
-cuando el agente se abre antes de iniciar carrera en ACC.
 """
 
 from __future__ import annotations
@@ -45,15 +43,18 @@ T = TypeVar("T", bound=ctypes.Structure)
 def read_existing_shm_struct(map_name: str, struct_cls: Type[T]) -> Optional[T]:
     """
     Abre un bloque de memoria compartida SOLO SI YA FUE CREADO por ACC (OpenFileMappingW).
-    Jamás llama a CreateFileMappingW, evitando dejar secciones PAGE_READONLY que hagan
-    crachear al hilo AC Physics Thread al iniciar sesión.
+    Mapea la vista completa (dwNumberOfBytesToMap=0) para máxima compatibilidad con cualquier
+    versión de ACC y cierra el descriptor inmediatamente después de copiar los bytes.
     """
     h_map = kernel32.OpenFileMappingW(FILE_MAP_READ, False, map_name)
+    if not h_map and map_name.startswith("Local\\"):
+        short_name = map_name.replace("Local\\", "", 1)
+        h_map = kernel32.OpenFileMappingW(FILE_MAP_READ, False, short_name)
     if not h_map:
         return None
 
     size = ctypes.sizeof(struct_cls)
-    p_view = kernel32.MapViewOfFile(h_map, FILE_MAP_READ, 0, 0, size)
+    p_view = kernel32.MapViewOfFile(h_map, FILE_MAP_READ, 0, 0, 0)
     if not p_view:
         kernel32.CloseHandle(h_map)
         return None
@@ -302,13 +303,11 @@ class TelemetrySample:
 class ACCSharedMemoryReader:
     """
     Lee Local\\acpmf_physics, Local\\acpmf_graphics y Local\\acpmf_static usando OpenFileMappingW.
-    Nunca pre-crea los segmentos de memoria en modo lectura, permitiendo abrir el agente
-    antes o después de Assetto Corsa Competizione sin provocar fallos en AC Physics Thread.
     """
 
     def __init__(self) -> None:
         self._last_packet_id: int = -1
-        self._stale_count: int = 0
+        self._last_change_ts: float = 0.0
 
     def close(self) -> None:
         pass
@@ -319,26 +318,27 @@ class ACCSharedMemoryReader:
             return None
 
         gfx = read_existing_shm_struct("Local\\acpmf_graphics", SPageFileGraphic)
-        if gfx is None:
-            return None
-
         stc = read_existing_shm_struct("Local\\acpmf_static", SPageFileStatic)
-        if stc is None:
-            return None
 
         try:
-            # AC_OFF = 0: El juego no está en sesión activa
-            if phys.packetId <= 0 or gfx.status <= 0:
+            now = time.time()
+            has_physics_activity = (
+                phys.packetId > 0
+                or phys.rpms > 0
+                or phys.speedKmh > 0.1
+                or phys.wheelsPressure[0] > 5.0
+            )
+            if not has_physics_activity:
                 return None
 
-            # Verificar que el paquete de física esté avanzando (juego en pista, no congelado)
-            if phys.packetId == self._last_packet_id:
-                self._stale_count += 1
-                if self._stale_count > 1000:  # ~3 segundos sin paquetes nuevos
-                    return None
-            else:
-                self._stale_count = 0
+            if phys.packetId != self._last_packet_id:
                 self._last_packet_id = int(phys.packetId)
+                self._last_change_ts = now
+            else:
+                # Si el paquete lleva más de 15 segundos congelado y sin presión de neumáticos, está en menú
+                if self._last_change_ts > 0 and (now - self._last_change_ts) > 15.0:
+                    if gfx is not None and gfx.status == 0:
+                        return None
 
             ride_front = float(phys.rideHeight[0])
             ride_rear = float(phys.rideHeight[1])
@@ -347,30 +347,36 @@ class ACCSharedMemoryReader:
             if 0.0 < ride_rear < 1.0:
                 ride_rear *= 1000.0
 
-            car_model = (stc.carModel or "").strip()
-            track_name = (stc.track or "").strip()
-            if not car_model or not track_name:
-                return None
+            car_model = ((stc.carModel if stc else "") or "").strip() or "gt3_car"
+            track_name = ((stc.track if stc else "") or "").strip() or "circuit"
+            driver_name = (
+                ((stc.playerNick or stc.playerName) if stc else "") or "Piloto"
+            ).strip()
 
             return TelemetrySample(
-                timestamp=time.time(),
+                timestamp=now,
                 is_live_acc=True,
                 packet_id=int(phys.packetId),
                 car_model=car_model,
                 track_name=track_name,
-                driver_name=(stc.playerNick or stc.playerName or "Piloto").strip(),
-                completed_laps=int(gfx.completedLaps),
-                current_lap_ms=max(0, int(gfx.iCurrentTime)),
-                last_lap_ms=max(0, int(gfx.iLastTime)),
-                best_lap_ms=max(0, int(gfx.iBestTime)),
-                sector_index=int(gfx.currentSectorIndex),
-                last_sector_ms=max(0, int(gfx.lastSectorTime)),
-                normalized_pos=max(0.0, min(1.0, float(gfx.normalizedCarPosition))),
-                is_in_pit=bool(gfx.isInPit),
-                is_in_pit_lane=bool(gfx.isInPitLane),
+                driver_name=driver_name,
+                completed_laps=int(gfx.completedLaps) if gfx else 0,
+                current_lap_ms=max(0, int(gfx.iCurrentTime)) if gfx else 0,
+                last_lap_ms=max(0, int(gfx.iLastTime)) if gfx else 0,
+                best_lap_ms=max(0, int(gfx.iBestTime)) if gfx else 0,
+                sector_index=int(gfx.currentSectorIndex) if gfx else 0,
+                last_sector_ms=max(0, int(gfx.lastSectorTime)) if gfx else 0,
+                normalized_pos=max(
+                    0.0, min(1.0, float(gfx.normalizedCarPosition) if gfx else 0.0)
+                ),
+                is_in_pit=bool(gfx.isInPit) if gfx else False,
+                is_in_pit_lane=bool(gfx.isInPitLane) if gfx else False,
                 speed_kmh=max(0.0, float(phys.speedKmh)),
                 rpms=max(0, int(phys.rpms)),
-                max_rpm=max(7500, int(stc.maxRpm or phys.currentMaxRpm or 8000)),
+                max_rpm=max(
+                    7500,
+                    int((stc.maxRpm if stc else 0) or phys.currentMaxRpm or 8000),
+                ),
                 gear=int(phys.gear) - 1,
                 gas=max(0.0, min(1.0, float(phys.gas))),
                 brake=max(0.0, min(1.0, float(phys.brake))),

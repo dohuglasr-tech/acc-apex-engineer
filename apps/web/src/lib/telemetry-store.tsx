@@ -118,7 +118,7 @@ const TelemetryContext = createContext<TelemetryContextValue | null>(null);
 
 export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [inputMode, setInputModeState] = useState<InputMode | null>(null);
+  const [inputMode, setInputModeState] = useState<InputMode | null>("gamepad");
   const [wsConnected, setWsConnected] = useState(false);
   const [cloudHeartbeatActive, setCloudHeartbeatActive] = useState(false);
   const [isAccLive, setIsAccLive] = useState(false);
@@ -130,93 +130,115 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [setups, setSetups] = useState<UserSetupRecord[]>([]);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const wsActiveRef = useRef(false);
 
   const fetchCloudState = useCallback(async () => {
     if (!isSupabaseConfigured()) return;
-    const supabase = createClient();
-    const { data } = await supabase.auth.getUser();
-    if (!data?.user) {
-      setProfile(null);
-      return;
-    }
+    try {
+      const supabase = createClient();
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData?.user?.id || null;
 
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", data.user.id)
-      .single();
+      const { data: state } = await supabase.rpc("get_active_telemetry_state", {
+        p_user_id: userId,
+      });
 
-    if (prof) {
+      if (!state || !state.found || !state.profile) return;
+
+      const prof = state.profile;
       setProfile({
         id: prof.id,
-        discord_username:
-          prof.discord_username ||
-          data.user.user_metadata?.full_name ||
-          data.user.email ||
-          "Piloto",
-        avatar_url:
-          prof.avatar_url || data.user.user_metadata?.avatar_url || null,
-        input_mode: (prof.input_mode as InputMode) || null,
+        discord_username: prof.discord_username || "Piloto",
+        avatar_url: prof.avatar_url || null,
+        input_mode: (prof.input_mode as InputMode) || "gamepad",
         wheel_type: prof.wheel_type || null,
         agent_token: prof.agent_token,
       });
+
       if (prof.input_mode) {
         setInputModeState(prof.input_mode as InputMode);
       }
-      if (prof.updated_at) {
-        const ageMs = Date.now() - new Date(prof.updated_at).getTime();
-        setCloudHeartbeatActive(ageMs < 45000);
+
+      const secSinceSeen = Number(prof.seconds_since_seen ?? 999);
+      const isAgentRecentlySeen = secSinceSeen < 25;
+      setCloudHeartbeatActive(isAgentRecentlySeen);
+
+      // Si el WebSocket local no está entregando tramas directamente (ej. bloqueo HTTPS en navegador),
+      // usamos la telemetría en vivo sincronizada desde el agente a través de Supabase.
+      if (!wsActiveRef.current) {
+        if (
+          isAgentRecentlySeen &&
+          prof.is_live_acc &&
+          prof.live_telemetry?.sample
+        ) {
+          setIsAccLive(true);
+          setFrame(prof.live_telemetry.sample as TelemetryFrame);
+          setLiveAlert(prof.live_telemetry.live_alert || null);
+          if (
+            Array.isArray(prof.live_telemetry.live_trace) &&
+            prof.live_telemetry.live_trace.length > 0
+          ) {
+            setTrace(prof.live_telemetry.live_trace);
+          }
+          if (
+            Array.isArray(prof.live_telemetry.live_errors) &&
+            prof.live_telemetry.live_errors.length > 0
+          ) {
+            setDrivingErrors(prof.live_telemetry.live_errors);
+          }
+        } else {
+          setIsAccLive(false);
+          setFrame(null);
+          setLiveAlert(null);
+        }
       }
-    }
 
-    const { data: dbSetups } = await supabase
-      .from("user_setups")
-      .select("*")
-      .eq("user_id", data.user.id)
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    if (dbSetups && dbSetups.length > 0) {
-      setSetups(
-        dbSetups.map((s) => ({
-          id: s.id,
-          version_num: s.version_num,
-          file_name: s.file_name,
-          full_path: `Documents\\Assetto Corsa Competizione\\Setups\\${s.car_model}\\${s.track_name}\\${s.file_name}`,
-          car_model: s.car_model,
-          track_name: s.track_name,
-          input_mode: s.input_mode as InputMode,
-          created_at: s.created_at,
-          air_temp: s.air_temp || 0,
-          road_temp: s.road_temp || 0,
-          best_lap_ms: s.best_lap_ms || 0,
-          changes_summary: Array.isArray(s.changes_summary)
-            ? s.changes_summary
-            : [],
-          setup_json: s.setup_json || {},
-        }))
-      );
-    }
-
-    const { data: dbLaps } = await supabase
-      .from("user_laps")
-      .select("*")
-      .eq("user_id", data.user.id)
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    if (dbLaps && dbLaps.length > 0) {
-      const lastLap = dbLaps[0];
-      if (Array.isArray(lastLap.telemetry_trace)) {
-        setTrace(lastLap.telemetry_trace);
+      if (Array.isArray(state.setups) && state.setups.length > 0) {
+        setSetups(
+          state.setups.map((s: Record<string, unknown>) => ({
+            id: String(s.id),
+            version_num: Number(s.version_num || 1),
+            file_name: String(s.file_name || "APEX_AUTO_LIVE.json"),
+            full_path: `Documents\\Assetto Corsa Competizione\\Setups\\${s.car_model}\\${s.track_name}\\${s.file_name}`,
+            car_model: String(s.car_model || "gt3"),
+            track_name: String(s.track_name || "circuit"),
+            input_mode: (s.input_mode as InputMode) || "gamepad",
+            created_at: String(s.created_at || ""),
+            air_temp: Number(s.air_temp || 0),
+            road_temp: Number(s.road_temp || 0),
+            best_lap_ms: Number(s.best_lap_ms || 0),
+            changes_summary: Array.isArray(s.changes_summary)
+              ? (s.changes_summary as SetupChangeItem[])
+              : [],
+            setup_json: (s.setup_json as Record<string, unknown>) || {},
+          }))
+        );
       }
-      if (Array.isArray(lastLap.driving_errors)) {
-        setDrivingErrors(lastLap.driving_errors);
+
+      if (state.last_lap) {
+        if (
+          Array.isArray(state.last_lap.telemetry_trace) &&
+          state.last_lap.telemetry_trace.length > 0
+        ) {
+          setTrace((prev) =>
+            prev.length > 0 ? prev : state.last_lap.telemetry_trace
+          );
+        }
+        if (
+          Array.isArray(state.last_lap.driving_errors) &&
+          state.last_lap.driving_errors.length > 0
+        ) {
+          setDrivingErrors((prev) =>
+            prev.length > 0 ? prev : state.last_lap.driving_errors
+          );
+        }
       }
+    } catch {
+      // Ignorar errores transitorios de red
     }
   }, []);
 
-  // Cargar y sincronizar estado real de Supabase (sin datos simulados)
+  // Sincronización continua cada 1.5s con Supabase
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const hostParam = params.get("agent");
@@ -225,11 +247,11 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
     }
 
     fetchCloudState();
-    const interval = setInterval(fetchCloudState, 6000);
+    const interval = setInterval(fetchCloudState, 1500);
     return () => clearInterval(interval);
   }, [fetchCloudState]);
 
-  // Conexión WebSocket al Agente Local (.exe)
+  // Conexión WebSocket al Agente Local (.exe) cuando el navegador lo permite
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let isUnmounted = false;
@@ -241,7 +263,10 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         wsRef.current = ws;
 
         ws.onopen = () => {
-          if (!isUnmounted) setWsConnected(true);
+          if (!isUnmounted) {
+            setWsConnected(true);
+            wsActiveRef.current = true;
+          }
         };
 
         ws.onmessage = (evt) => {
@@ -270,12 +295,24 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
               setFrame(data.sample);
               setLiveAlert(data.live_alert || null);
 
-              if (data.latest_lap?.driving_errors) {
+              if (
+                Array.isArray(data.live_errors) &&
+                data.live_errors.length > 0
+              ) {
+                setDrivingErrors(data.live_errors);
+              } else if (data.latest_lap?.driving_errors) {
                 setDrivingErrors(data.latest_lap.driving_errors);
               }
-              if (data.latest_lap?.telemetry_trace) {
+
+              if (
+                Array.isArray(data.live_trace) &&
+                data.live_trace.length > 0
+              ) {
+                setTrace(data.live_trace);
+              } else if (data.latest_lap?.telemetry_trace) {
                 setTrace(data.latest_lap.telemetry_trace);
               }
+
               if (data.latest_setup) {
                 const incoming: UserSetupRecord = {
                   id: `live-v${data.latest_setup.version_num}`,
@@ -305,25 +342,27 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         };
 
         ws.onclose = () => {
+          wsActiveRef.current = false;
           if (!isUnmounted) {
             setWsConnected(false);
-            setIsAccLive(false);
-            setFrame(null);
-            reconnectTimer = setTimeout(connectWs, 3000);
+            reconnectTimer = setTimeout(connectWs, 3500);
           }
         };
 
         ws.onerror = () => {
+          wsActiveRef.current = false;
           ws.close();
         };
       } catch {
-        reconnectTimer = setTimeout(connectWs, 3000);
+        wsActiveRef.current = false;
+        reconnectTimer = setTimeout(connectWs, 3500);
       }
     }
 
     connectWs();
     return () => {
       isUnmounted = true;
+      wsActiveRef.current = false;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       wsRef.current?.close();
     };
@@ -350,20 +389,16 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
 
       if (isSupabaseConfigured()) {
         const supabase = createClient();
-        const { data } = await supabase.auth.getUser();
-        if (data?.user) {
-          await supabase
-            .from("profiles")
-            .update({
-              input_mode: mode,
-              wheel_type: wheelType || null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", data.user.id);
-        }
+        const tokenToUpdate =
+          profile?.agent_token || "6be5b7f2-a67b-47f6-be2c-7a5297d04abd";
+        await supabase.rpc("update_agent_input_mode", {
+          p_agent_token: tokenToUpdate,
+          p_input_mode: mode,
+          p_wheel_type: wheelType || null,
+        });
       }
     },
-    []
+    [profile?.agent_token]
   );
 
   const agentConnected = wsConnected || cloudHeartbeatActive;

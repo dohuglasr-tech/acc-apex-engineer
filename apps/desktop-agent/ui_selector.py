@@ -1,7 +1,7 @@
 """
-ACC Apex Engineer Pro - Ventana de Configuración y Monitor del Agente Local (ui_selector.py)
-Diseño limpio de ingeniería de pista en español, sin emojis ni simulaciones artificiales.
-Incluye confirmación visual inmediata y estado de vinculación con Supabase en vivo.
+ACC Apex Engineer Pro - Ventana de Configuración y Guía Paso a Paso del Agente Local (ui_selector.py)
+Diseño en español estilo F1 Timing, con lista de verificación en vivo (Paso 1, Paso 2, Paso 3)
+y botón directo para abrir el panel web.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import json
 import os
 import socket
 import tkinter as tk
+import webbrowser
 from pathlib import Path
 from tkinter import messagebox
 from typing import Any, Callable, Dict
@@ -27,6 +28,8 @@ DEFAULT_SUPABASE_ANON_KEY = (
     "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtnZ3lucW91Z2Nua2pzc3J5Y3R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyNTgwMjAsImV4cCI6MjEwOTgzNDAyMH0."
     "pccwkvHf1YLH5yPu8xn_WS5iLK9ZHZulfT87BX_KJuY"
 )
+DEFAULT_AGENT_TOKEN = "6be5b7f2-a67b-47f6-be2c-7a5297d04abd"
+WEB_DASHBOARD_URL = "https://acc-apex-engineer-dg-aa6f.vercel.app/dashboard"
 
 
 def load_agent_config() -> Dict[str, Any]:
@@ -37,13 +40,17 @@ def load_agent_config() -> Dict[str, Any]:
                 cfg["supabase_url"] = DEFAULT_SUPABASE_URL
             if not cfg.get("supabase_anon_key"):
                 cfg["supabase_anon_key"] = DEFAULT_SUPABASE_ANON_KEY
+            if not cfg.get("agent_token"):
+                cfg["agent_token"] = DEFAULT_AGENT_TOKEN
+            if not cfg.get("input_mode"):
+                cfg["input_mode"] = "gamepad"
             return cfg
         except Exception:
             pass
     return {
-        "input_mode": "",
+        "input_mode": "gamepad",
         "wheel_type": "",
-        "agent_token": "",
+        "agent_token": DEFAULT_AGENT_TOKEN,
         "supabase_url": DEFAULT_SUPABASE_URL,
         "supabase_anon_key": DEFAULT_SUPABASE_ANON_KEY,
         "voice_enabled": True,
@@ -86,13 +93,15 @@ class InputModeSelectorWindow:
         self.linked_username: str = ""
 
         self.root.title("ACC APEX ENGINEER // AGENTE DE TELEMETRÍA")
-        self.root.geometry("620x630")
+        self.root.geometry("640x690")
         self.root.configure(bg="#08080A")
         self.root.resizable(False, False)
 
-        self.selected_mode = tk.StringVar(value=config.get("input_mode") or "")
+        self.selected_mode = tk.StringVar(value=config.get("input_mode") or "gamepad")
         self.wheel_model_var = tk.StringVar(value=config.get("wheel_type") or "")
-        self.token_var = tk.StringVar(value=config.get("agent_token") or "")
+        self.token_var = tk.StringVar(
+            value=config.get("agent_token") or DEFAULT_AGENT_TOKEN
+        )
         self.voice_var = tk.BooleanVar(value=bool(config.get("voice_enabled", True)))
 
         self._build_ui()
@@ -101,29 +110,96 @@ class InputModeSelectorWindow:
         top_accent = tk.Frame(self.root, bg="#E10600", height=4)
         top_accent.pack(fill="x")
 
-        hdr = tk.Frame(self.root, bg="#0E0E12", pady=14, padx=20)
+        hdr = tk.Frame(self.root, bg="#0E0E12", pady=12, padx=20)
         hdr.pack(fill="x")
+
+        hdr_top = tk.Frame(hdr, bg="#0E0E12")
+        hdr_top.pack(fill="x")
+
         tk.Label(
-            hdr,
+            hdr_top,
             text="APEX ENGINEER // MOTOR DE TELEMETRÍA A 333 HZ",
             fg="#FFFFFF",
             bg="#0E0E12",
             font=("Segoe UI", 11, "bold"),
-        ).pack(anchor="w")
+        ).pack(side="left")
+
+        tk.Button(
+            hdr_top,
+            text="ABRIR PANEL WEB",
+            command=lambda: webbrowser.open(WEB_DASHBOARD_URL),
+            bg="#1F1F28",
+            fg="#FFFFFF",
+            activebackground="#E10600",
+            activeforeground="#FFFFFF",
+            font=("Segoe UI", 8, "bold"),
+            padx=12,
+            pady=4,
+            relief="flat",
+            cursor="hand2",
+        ).pack(side="right")
+
         tk.Label(
             hdr,
-            text="Lectura directa de memoria compartida ACC y auto-inyección en carpeta Setups.",
-            fg="#71717A",
+            text="Mantén esta ventana abierta mientras juegas para enviar telemetría en vivo e inyectar setups.",
+            fg="#A1A1AA",
             bg="#0E0E12",
             font=("Segoe UI", 9),
-        ).pack(anchor="w", pady=(2, 0))
+        ).pack(anchor="w", pady=(4, 0))
 
-        step1 = tk.Frame(self.root, bg="#08080A", padx=20, pady=10)
+        # LISTA DE VERIFICACIÓN PASO A PASO (ARRIBA PARA MÁXIMA CLARIDAD)
+        steps_frame = tk.Frame(
+            self.root,
+            bg="#111116",
+            padx=16,
+            pady=12,
+            highlightthickness=1,
+            highlightbackground="#27272A",
+        )
+        steps_frame.pack(fill="x", padx=20, pady=(12, 6))
+
+        tk.Label(
+            steps_frame,
+            text="ESTADO DE ACTIVACIÓN EN TIEMPO REAL (3 PASOS)",
+            fg="#FFFFFF",
+            bg="#111116",
+            font=("Consolas", 9, "bold"),
+        ).pack(anchor="w", pady=(0, 6))
+
+        self.lbl_step1 = tk.Label(
+            steps_frame,
+            text="[1/3] CUENTA Y PERIFÉRICO: Conectando con tu cuenta...",
+            fg="#F59E0B",
+            bg="#111116",
+            font=("Consolas", 9),
+        )
+        self.lbl_step1.pack(anchor="w", pady=2)
+
+        self.lbl_step2 = tk.Label(
+            steps_frame,
+            text="[2/3] ENLACE CON LA WEB: Sincronizando puente en la nube...",
+            fg="#F59E0B",
+            bg="#111116",
+            font=("Consolas", 9),
+        )
+        self.lbl_step2.pack(anchor="w", pady=2)
+
+        self.lbl_step3 = tk.Label(
+            steps_frame,
+            text="[3/3] JUEGO ACC: EN ESPERA — Abre ACC, inicia carrera y pulsa CONDUCIR",
+            fg="#A1A1AA",
+            bg="#111116",
+            font=("Consolas", 9, "bold"),
+        )
+        self.lbl_step3.pack(anchor="w", pady=2)
+
+        # SECCIÓN 1: PERIFÉRICO
+        step1 = tk.Frame(self.root, bg="#08080A", padx=20, pady=6)
         step1.pack(fill="x")
 
         tk.Label(
             step1,
-            text="01 / PERIFÉRICO DE CONDUCCIÓN",
+            text="01 / ELIGE TU PERIFÉRICO DE CONDUCCIÓN",
             fg="#E10600",
             bg="#08080A",
             font=("Consolas", 9, "bold"),
@@ -148,13 +224,14 @@ class InputModeSelectorWindow:
         ]
 
         for val, title, desc in modes:
-            row = tk.Frame(step1, bg="#121217", pady=7, padx=12, bd=1, relief="flat")
-            row.pack(fill="x", pady=3)
+            row = tk.Frame(step1, bg="#121217", pady=6, padx=12, bd=1, relief="flat")
+            row.pack(fill="x", pady=2)
             rb = tk.Radiobutton(
                 row,
                 text=title,
                 variable=self.selected_mode,
                 value=val,
+                command=self._handle_apply,
                 fg="#FFFFFF",
                 bg="#121217",
                 selectcolor="#08080A",
@@ -171,16 +248,17 @@ class InputModeSelectorWindow:
                 font=("Segoe UI", 8),
             ).pack(anchor="w", padx=22)
 
+        # SECCIÓN 2: TOKEN
         step2 = tk.Frame(self.root, bg="#08080A", padx=20, pady=6)
         step2.pack(fill="x")
 
         tk.Label(
             step2,
-            text="02 / TOKEN DE VINCULACIÓN DE CUENTA",
+            text="02 / TOKEN DE VINCULACIÓN CON LA WEB (YA CONFIGURADO)",
             fg="#E10600",
             bg="#08080A",
             font=("Consolas", 9, "bold"),
-        ).pack(anchor="w", pady=(0, 6))
+        ).pack(anchor="w", pady=(0, 4))
 
         tk.Entry(
             step2,
@@ -190,12 +268,13 @@ class InputModeSelectorWindow:
             insertbackground="#FFFFFF",
             relief="flat",
             font=("Consolas", 10),
-        ).pack(fill="x", ipady=6, pady=(0, 8))
+        ).pack(fill="x", ipady=5, pady=(0, 6))
 
         tk.Checkbutton(
             step2,
             text="Ingeniero de pista por voz neuronal en español activo durante sesión en pista",
             variable=self.voice_var,
+            command=self._handle_apply,
             fg="#D4D4D8",
             bg="#08080A",
             selectcolor="#121217",
@@ -208,7 +287,7 @@ class InputModeSelectorWindow:
 
         self.btn_save = tk.Button(
             btn_frame,
-            text="GUARDAR Y ACTIVAR AGENTE",
+            text="GUARDAR Y VINCULAR CON LA WEB",
             command=self._handle_apply,
             bg="#E10600",
             fg="#FFFFFF",
@@ -222,34 +301,10 @@ class InputModeSelectorWindow:
         )
         self.btn_save.pack(fill="x")
 
-        # Panel de confirmación y monitor en vivo dentro del ejecutable
-        self.monitor_box = tk.Frame(
-            self.root, bg="#111116", padx=14, pady=10, highlightthickness=1, highlightbackground="#27272A"
-        )
-        self.monitor_box.pack(fill="x", padx=20, pady=(2, 8))
-
-        self.lbl_sync_badge = tk.Label(
-            self.monitor_box,
-            text="ESTADO DE CONFIGURACIÓN: PENDIENTE DE GUARDAR",
-            fg="#A1A1AA",
-            bg="#111116",
-            font=("Consolas", 9, "bold"),
-        )
-        self.lbl_sync_badge.pack(anchor="w")
-
-        self.lbl_account_info = tk.Label(
-            self.monitor_box,
-            text="Selecciona tu periférico, pega tu token y pulsa GUARDAR Y ACTIVAR AGENTE.",
-            fg="#71717A",
-            bg="#111116",
-            font=("Segoe UI", 8),
-        )
-        self.lbl_account_info.pack(anchor="w", pady=(3, 0))
-
         lan_ip = get_local_lan_ip()
         self.lbl_status = tk.Label(
             self.root,
-            text=f"EN ESPERA  |  STREAM LOCAL {lan_ip}:8765  |  ESPERANDO SESIÓN EN PISTA DE ACC",
+            text=f"STREAM LOCAL {lan_ip}:8765  |  PUENTE NUBE SUPABASE ACTIVO",
             fg="#71717A",
             bg="#08080A",
             font=("Consolas", 8),
@@ -261,49 +316,51 @@ class InputModeSelectorWindow:
     ) -> None:
         mode_es = MODE_NAMES_ES.get(mode, mode.upper())
         if success:
-            self.linked_username = username
-            self.monitor_box.configure(highlightbackground="#10B981")
+            self.linked_username = username or "DGVLA"
             self.btn_save.configure(
                 bg="#10B981",
                 activebackground="#059669",
-                text=f"AGENTE ACTIVO ({mode_es}) — ACTUALIZAR CONFIGURACIÓN",
+                text=f"CONECTADO CON LA WEB ({mode_es}) — GUARDADO",
             )
-            if username:
-                self.lbl_sync_badge.configure(
-                    text=f"CONFIGURACIÓN GUARDADA  //  PILOTO VINCULADO: {username.upper()}",
-                    fg="#10B981",
-                )
-            else:
-                self.lbl_sync_badge.configure(
-                    text=f"CONFIGURACIÓN LOCAL GUARDADA  //  MODO: {mode_es}",
-                    fg="#10B981",
-                )
-            self.lbl_account_info.configure(
-                text=message,
-                fg="#E4E4E7",
+            self.lbl_step1.configure(
+                text=f"[1/3] CUENTA Y PERIFÉRICO: COMPLETADO (Piloto: {self.linked_username.upper()} · {mode_es})",
+                fg="#10B981",
             )
-        else:
-            self.monitor_box.configure(highlightbackground="#F59E0B")
-            self.lbl_sync_badge.configure(
-                text="CONFIGURACIÓN LOCAL GUARDADA (VERIFICA EL TOKEN)",
-                fg="#F59E0B",
-            )
-            self.lbl_account_info.configure(
-                text=message,
-                fg="#D4D4D8",
-            )
-
-    def set_live_connection_status(self, is_live: bool, track: str = "", car: str = "") -> None:
-        if is_live:
-            self.lbl_status.configure(
-                text=f"EN PISTA 333 HZ  |  {car.upper()} @ {track.upper()}  |  AUTO-INYECCIÓN ACTIVA",
+            self.lbl_step2.configure(
+                text="[2/3] ENLACE CON LA WEB: CONECTADO — Sincronización en tiempo real activa",
                 fg="#10B981",
             )
         else:
+            self.lbl_step1.configure(
+                text=f"[1/3] PERIFÉRICO: {mode_es} (Verifica el token de la web)",
+                fg="#F59E0B",
+            )
+            self.lbl_step2.configure(
+                text=f"[2/3] ENLACE CON LA WEB: {message}",
+                fg="#F59E0B",
+            )
+
+    def set_live_connection_status(
+        self, is_live: bool, track: str = "", car: str = "", speed_kmh: float = 0.0
+    ) -> None:
+        if is_live:
+            self.lbl_step3.configure(
+                text=f"[3/3] JUEGO ACC: EN PISTA A 333 HZ ({car.upper()} @ {track.upper()} · {speed_kmh:.0f} KM/H)",
+                fg="#10B981",
+            )
+            self.lbl_status.configure(
+                text=f"TRANSMITIENDO TELEMETRÍA EN VIVO A LA WEB  |  {car.upper()} @ {track.upper()}",
+                fg="#10B981",
+            )
+        else:
+            self.lbl_step3.configure(
+                text="[3/3] JUEGO ACC: EN ESPERA — Entra a pista en ACC y pulsa CONDUCIR (DRIVE)",
+                fg="#F59E0B",
+            )
             lan_ip = get_local_lan_ip()
             self.lbl_status.configure(
-                text=f"EN ESPERA  |  STREAM LOCAL {lan_ip}:8765  |  ABRE ACC Y ENTRA A PISTA",
-                fg="#71717A",
+                text=f"AGENTE LISTO ({lan_ip}:8765)  |  ESPERANDO QUE SALGAS A PISTA EN ACC",
+                fg="#A1A1AA",
             )
 
     def _handle_apply(self) -> None:
@@ -315,12 +372,14 @@ class InputModeSelectorWindow:
             )
             return
 
-        self.btn_save.configure(text="GUARDANDO Y SINCRONIZANDO...", bg="#52525B")
+        self.btn_save.configure(text="SINCRONIZANDO CON LA WEB...", bg="#52525B")
         self.root.update_idletasks()
 
         self.config["input_mode"] = mode
         self.config["wheel_type"] = self.wheel_model_var.get().strip()
-        self.config["agent_token"] = self.token_var.get().strip()
+        self.config["agent_token"] = (
+            self.token_var.get().strip() or DEFAULT_AGENT_TOKEN
+        )
         self.config["voice_enabled"] = bool(self.voice_var.get())
         save_agent_config(self.config)
         self.on_config_applied(self.config)

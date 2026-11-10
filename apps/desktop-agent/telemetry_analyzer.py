@@ -79,9 +79,14 @@ class TelemetryLapAnalyzer:
         self.input_mode = input_mode if input_mode in ("keyboard", "gamepad", "wheel") else "wheel"
         self._samples: List[TelemetrySample] = []
         self._last_lap_count: Optional[int] = None
+        self._last_norm_pos: float = 0.0
+        self._synthetic_lap_num: int = 0
         self._best_trace_speeds: Dict[int, float] = {}
         self.live_alert: Optional[str] = None
         self._live_alert_until: float = 0.0
+        self.live_trace: List[Dict[str, Any]] = []
+        self.live_errors: List[Dict[str, Any]] = []
+        self._last_snapshot_ts: float = 0.0
 
     def set_input_mode(self, input_mode: str) -> None:
         if input_mode in ("keyboard", "gamepad", "wheel"):
@@ -90,17 +95,42 @@ class TelemetryLapAnalyzer:
     def process_sample(self, sample: TelemetrySample) -> Optional[CompletedLapAnalysis]:
         if self._last_lap_count is None:
             self._last_lap_count = sample.completed_laps
+            self._last_norm_pos = sample.normalized_pos
 
         # Detección de alerta instantánea en vivo para el Overlay HUD
         self._detect_realtime_hud_alert(sample)
 
-        # Comprobar cruce de línea de meta
+        # Comprobar cruce de línea de meta (por contador de vueltas o por cruce 90% -> 5%)
+        crossed_line = (
+            self._last_norm_pos > 0.85
+            and 0.0 < sample.normalized_pos < 0.15
+            and len(self._samples) >= 250
+        )
+        lap_incremented = (
+            sample.completed_laps > self._last_lap_count and len(self._samples) >= 80
+        )
+
         completed_analysis: Optional[CompletedLapAnalysis] = None
-        if sample.completed_laps > self._last_lap_count and len(self._samples) >= 40:
+        if lap_incremented or crossed_line:
+            self._synthetic_lap_num = max(
+                self._synthetic_lap_num + 1, sample.completed_laps
+            )
             completed_analysis = self._build_completed_lap(sample)
+            self.live_trace = completed_analysis.telemetry_trace
+            self.live_errors = completed_analysis.driving_errors
             self._samples.clear()
+        elif (
+            len(self._samples) >= 60
+            and (sample.timestamp - self._last_snapshot_ts) > 2.5
+        ):
+            # Actualizar traza parcial en vivo cada 2.5s mientras conduce en pista
+            self._last_snapshot_ts = sample.timestamp
+            partial = self._build_completed_lap(sample)
+            self.live_trace = partial.telemetry_trace
+            self.live_errors = partial.driving_errors
 
         self._last_lap_count = sample.completed_laps
+        self._last_norm_pos = sample.normalized_pos
         self._samples.append(sample)
         return completed_analysis
 

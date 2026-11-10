@@ -318,3 +318,108 @@ begin
   return v_lap_id;
 end;
 $$;
+
+
+-- ============================================================================
+-- Puente de Telemetría Cloud en Vivo (Sincronización HTTPS 1.2s sin bloqueo WS)
+-- ============================================================================
+alter table public.profiles
+  add column if not exists is_live_acc boolean not null default false,
+  add column if not exists live_telemetry jsonb default null;
+
+create or replace function public.agent_push_live_state(
+  p_agent_token uuid,
+  p_is_live boolean,
+  p_input_mode text default null,
+  p_live_telemetry jsonb default null
+)
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_profile public.profiles%rowtype;
+begin
+  update public.profiles
+  set is_live_acc = p_is_live,
+      input_mode = coalesce(p_input_mode, input_mode),
+      live_telemetry = case when p_is_live then p_live_telemetry else null end,
+      updated_at = now()
+  where agent_token = p_agent_token
+  returning * into v_profile;
+
+  if not found then
+    raise exception 'Token de agente inválido';
+  end if;
+
+  return jsonb_build_object(
+    'id', v_profile.id,
+    'discord_username', v_profile.discord_username,
+    'input_mode', v_profile.input_mode,
+    'is_live_acc', v_profile.is_live_acc,
+    'updated_at', v_profile.updated_at
+  );
+end;
+$$;
+
+create or replace function public.get_active_telemetry_state(p_user_id uuid default null)
+returns jsonb
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  v_prof public.profiles%rowtype;
+  v_setups jsonb;
+  v_last_lap jsonb;
+begin
+  if p_user_id is not null then
+    select * into v_prof from public.profiles where id = p_user_id limit 1;
+  else
+    select * into v_prof from public.profiles order by updated_at desc limit 1;
+  end if;
+
+  if not found then
+    return jsonb_build_object('found', false);
+  end if;
+
+  select coalesce(jsonb_agg(t), '[]'::jsonb) into v_setups
+  from (
+    select id, version_num, file_name, car_model, track_name, input_mode,
+           created_at, air_temp, road_temp, best_lap_ms, changes_summary, setup_json
+    from public.user_setups
+    where user_id = v_prof.id
+    order by created_at desc
+    limit 15
+  ) t;
+
+  select to_jsonb(l) into v_last_lap
+  from (
+    select lap_number, lap_time_ms, telemetry_trace, driving_errors, created_at
+    from public.user_laps
+    where user_id = v_prof.id
+    order by created_at desc
+    limit 1
+  ) l;
+
+  return jsonb_build_object(
+    'found', true,
+    'profile', jsonb_build_object(
+      'id', v_prof.id,
+      'discord_username', v_prof.discord_username,
+      'avatar_url', v_prof.avatar_url,
+      'input_mode', v_prof.input_mode,
+      'wheel_type', v_prof.wheel_type,
+      'agent_token', v_prof.agent_token,
+      'is_live_acc', v_prof.is_live_acc,
+      'live_telemetry', v_prof.live_telemetry,
+      'updated_at', v_prof.updated_at,
+      'seconds_since_seen', extract(epoch from (now() - v_prof.updated_at))
+    ),
+    'setups', v_setups,
+    'last_lap', v_last_lap
+  );
+end;
+$$;
+
+grant execute on function public.agent_push_live_state(uuid, boolean, text, jsonb) to anon, authenticated, service_role;
+grant execute on function public.get_active_telemetry_state(uuid) to anon, authenticated, service_role;
