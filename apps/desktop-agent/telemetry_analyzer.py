@@ -226,10 +226,16 @@ class TelemetryLapAnalyzer:
             for i in range(4)
         ]
         imo_temps: List[List[float]] = []
+        has_imo = bool(tail and tail[0].tyre_temps_imo and len(tail[0].tyre_temps_imo) >= 4)
         for i in range(4):
-            avg_i = round(sum(s.tyre_temps_imo[i][0] for s in tail) / len(tail), 1) if s.tyre_temps_imo else core_temps[i]
-            avg_m = round(sum(s.tyre_temps_imo[i][1] for s in tail) / len(tail), 1) if s.tyre_temps_imo else core_temps[i]
-            avg_o = round(sum(s.tyre_temps_imo[i][2] for s in tail) / len(tail), 1) if s.tyre_temps_imo else core_temps[i]
+            if has_imo:
+                avg_i = round(sum(s.tyre_temps_imo[i][0] for s in tail) / len(tail), 1)
+                avg_m = round(sum(s.tyre_temps_imo[i][1] for s in tail) / len(tail), 1)
+                avg_o = round(sum(s.tyre_temps_imo[i][2] for s in tail) / len(tail), 1)
+            else:
+                avg_i = core_temps[i]
+                avg_m = core_temps[i]
+                avg_o = core_temps[i]
             imo_temps.append([avg_i, avg_m, avg_o])
 
         brake_temps_avg = [

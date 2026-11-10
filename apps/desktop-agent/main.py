@@ -320,13 +320,16 @@ class ApexDesktopAgentApp:
         target_dt = 1.0 / 333.0
         while self.running:
             t0 = time.perf_counter()
-            sample = self.shm_reader.read_sample()
-            self.latest_sample = sample
-            if sample is not None and sample.is_live_acc:
-                self.ai_engineer.process_sample(sample)
-                completed_lap = self.analyzer.process_sample(sample)
-                if completed_lap is not None:
-                    self._handle_completed_lap(completed_lap)
+            try:
+                sample = self.shm_reader.read_sample()
+                self.latest_sample = sample
+                if sample is not None and sample.is_live_acc:
+                    self.ai_engineer.process_sample(sample)
+                    completed_lap = self.analyzer.process_sample(sample)
+                    if completed_lap is not None:
+                        self._handle_completed_lap(completed_lap)
+            except Exception:
+                pass
             elapsed = time.perf_counter() - t0
             sleep_for = target_dt - elapsed
             if sleep_for > 0:
