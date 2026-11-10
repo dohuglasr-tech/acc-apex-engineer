@@ -29,3 +29,6 @@ agent_config.json
 Thumbs.db
 .vercel
 
+
+.vercel
+.env*
