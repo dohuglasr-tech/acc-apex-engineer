@@ -1,6 +1,7 @@
 """
-ACC Apex Engineer Pro - Ventana de Configuración del Agente Local (ui_selector.py)
+ACC Apex Engineer Pro - Ventana de Configuración y Monitor del Agente Local (ui_selector.py)
 Diseño limpio de ingeniería de pista en español, sin emojis ni simulaciones artificiales.
+Incluye confirmación visual inmediata y estado de vinculación con Supabase en vivo.
 """
 
 from __future__ import annotations
@@ -65,6 +66,13 @@ def get_local_lan_ip() -> str:
         return "127.0.0.1"
 
 
+MODE_NAMES_ES = {
+    "keyboard": "TECLADO",
+    "gamepad": "MANDO / CONTROLADOR",
+    "wheel": "VOLANTE Y PEDALES FFB",
+}
+
+
 class InputModeSelectorWindow:
     def __init__(
         self,
@@ -75,9 +83,10 @@ class InputModeSelectorWindow:
         self.root = root
         self.config = config
         self.on_config_applied = on_config_applied
+        self.linked_username: str = ""
 
         self.root.title("ACC APEX ENGINEER // AGENTE DE TELEMETRÍA")
-        self.root.geometry("600x540")
+        self.root.geometry("620x630")
         self.root.configure(bg="#08080A")
         self.root.resizable(False, False)
 
@@ -109,7 +118,7 @@ class InputModeSelectorWindow:
             font=("Segoe UI", 9),
         ).pack(anchor="w", pady=(2, 0))
 
-        step1 = tk.Frame(self.root, bg="#08080A", padx=20, pady=12)
+        step1 = tk.Frame(self.root, bg="#08080A", padx=20, pady=10)
         step1.pack(fill="x")
 
         tk.Label(
@@ -118,7 +127,7 @@ class InputModeSelectorWindow:
             fg="#E10600",
             bg="#08080A",
             font=("Consolas", 9, "bold"),
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", pady=(0, 6))
 
         modes = [
             (
@@ -139,7 +148,7 @@ class InputModeSelectorWindow:
         ]
 
         for val, title, desc in modes:
-            row = tk.Frame(step1, bg="#121217", pady=8, padx=12, bd=1, relief="flat")
+            row = tk.Frame(step1, bg="#121217", pady=7, padx=12, bd=1, relief="flat")
             row.pack(fill="x", pady=3)
             rb = tk.Radiobutton(
                 row,
@@ -162,7 +171,7 @@ class InputModeSelectorWindow:
                 font=("Segoe UI", 8),
             ).pack(anchor="w", padx=22)
 
-        step2 = tk.Frame(self.root, bg="#08080A", padx=20, pady=8)
+        step2 = tk.Frame(self.root, bg="#08080A", padx=20, pady=6)
         step2.pack(fill="x")
 
         tk.Label(
@@ -194,12 +203,12 @@ class InputModeSelectorWindow:
             font=("Segoe UI", 9),
         ).pack(anchor="w")
 
-        btn_frame = tk.Frame(self.root, bg="#08080A", padx=20, pady=14)
+        btn_frame = tk.Frame(self.root, bg="#08080A", padx=20, pady=10)
         btn_frame.pack(fill="x")
 
-        tk.Button(
+        self.btn_save = tk.Button(
             btn_frame,
-            text="GUARDAR CONFIGURACIÓN",
+            text="GUARDAR Y ACTIVAR AGENTE",
             command=self._handle_apply,
             bg="#E10600",
             fg="#FFFFFF",
@@ -210,28 +219,90 @@ class InputModeSelectorWindow:
             pady=9,
             relief="flat",
             cursor="hand2",
-        ).pack(fill="x")
+        )
+        self.btn_save.pack(fill="x")
+
+        # Panel de confirmación y monitor en vivo dentro del ejecutable
+        self.monitor_box = tk.Frame(
+            self.root, bg="#111116", padx=14, pady=10, highlightthickness=1, highlightbackground="#27272A"
+        )
+        self.monitor_box.pack(fill="x", padx=20, pady=(2, 8))
+
+        self.lbl_sync_badge = tk.Label(
+            self.monitor_box,
+            text="ESTADO DE CONFIGURACIÓN: PENDIENTE DE GUARDAR",
+            fg="#A1A1AA",
+            bg="#111116",
+            font=("Consolas", 9, "bold"),
+        )
+        self.lbl_sync_badge.pack(anchor="w")
+
+        self.lbl_account_info = tk.Label(
+            self.monitor_box,
+            text="Selecciona tu periférico, pega tu token y pulsa GUARDAR Y ACTIVAR AGENTE.",
+            fg="#71717A",
+            bg="#111116",
+            font=("Segoe UI", 8),
+        )
+        self.lbl_account_info.pack(anchor="w", pady=(3, 0))
 
         lan_ip = get_local_lan_ip()
         self.lbl_status = tk.Label(
             self.root,
-            text=f"EN ESPERA  |  STREAM LOCAL {lan_ip}:8765  |  ESPERANDO ASSETTO CORSA COMPETIZIONE",
+            text=f"EN ESPERA  |  STREAM LOCAL {lan_ip}:8765  |  ESPERANDO SESIÓN EN PISTA DE ACC",
             fg="#71717A",
             bg="#08080A",
             font=("Consolas", 8),
         )
-        self.lbl_status.pack(anchor="w", padx=20, pady=(4, 4))
+        self.lbl_status.pack(anchor="w", padx=20, pady=(2, 4))
+
+    def set_sync_feedback(
+        self, success: bool, message: str, username: str = "", mode: str = ""
+    ) -> None:
+        mode_es = MODE_NAMES_ES.get(mode, mode.upper())
+        if success:
+            self.linked_username = username
+            self.monitor_box.configure(highlightbackground="#10B981")
+            self.btn_save.configure(
+                bg="#10B981",
+                activebackground="#059669",
+                text=f"AGENTE ACTIVO ({mode_es}) — ACTUALIZAR CONFIGURACIÓN",
+            )
+            if username:
+                self.lbl_sync_badge.configure(
+                    text=f"CONFIGURACIÓN GUARDADA  //  PILOTO VINCULADO: {username.upper()}",
+                    fg="#10B981",
+                )
+            else:
+                self.lbl_sync_badge.configure(
+                    text=f"CONFIGURACIÓN LOCAL GUARDADA  //  MODO: {mode_es}",
+                    fg="#10B981",
+                )
+            self.lbl_account_info.configure(
+                text=message,
+                fg="#E4E4E7",
+            )
+        else:
+            self.monitor_box.configure(highlightbackground="#F59E0B")
+            self.lbl_sync_badge.configure(
+                text="CONFIGURACIÓN LOCAL GUARDADA (VERIFICA EL TOKEN)",
+                fg="#F59E0B",
+            )
+            self.lbl_account_info.configure(
+                text=message,
+                fg="#D4D4D8",
+            )
 
     def set_live_connection_status(self, is_live: bool, track: str = "", car: str = "") -> None:
         if is_live:
             self.lbl_status.configure(
-                text=f"EN PISTA 333 HZ  |  {car.upper()} @ {track.upper()}",
+                text=f"EN PISTA 333 HZ  |  {car.upper()} @ {track.upper()}  |  AUTO-INYECCIÓN ACTIVA",
                 fg="#10B981",
             )
         else:
             lan_ip = get_local_lan_ip()
             self.lbl_status.configure(
-                text=f"EN ESPERA  |  STREAM LOCAL {lan_ip}:8765  |  ESPERANDO SESIÓN EN PISTA DE ACC",
+                text=f"EN ESPERA  |  STREAM LOCAL {lan_ip}:8765  |  ABRE ACC Y ENTRA A PISTA",
                 fg="#71717A",
             )
 
@@ -243,6 +314,9 @@ class InputModeSelectorWindow:
                 "Selecciona tu periférico de conducción (Teclado, Mando o Volante).",
             )
             return
+
+        self.btn_save.configure(text="GUARDANDO Y SINCRONIZANDO...", bg="#52525B")
+        self.root.update_idletasks()
 
         self.config["input_mode"] = mode
         self.config["wheel_type"] = self.wheel_model_var.get().strip()

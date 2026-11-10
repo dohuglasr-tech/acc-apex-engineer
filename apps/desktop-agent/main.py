@@ -2,9 +2,9 @@
 ACC Apex Engineer Pro - Orquestador Principal del Agente Ejecutable Local (main.py)
   - Bucle de lectura de Memoria Compartida de ACC a 333 Hz (cada 3 ms)
   - Sin simulaciones artificiales: permanece en espera limpia hasta que ACC entra en pista
+  - Confirmación visual inmediata y latido de conexión (heartbeat) hacia Supabase
   - Servidor WebSocket Local a 60 FPS (ws://0.0.0.0:8765)
   - Auto-Inyector de Setups en tiempo real en Documents\\Assetto Corsa Competizione\\Setups
-  - Sincronización Cloud privada por usuario en Supabase (vía RPC con agent_token)
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import json
 import threading
 import time
 import tkinter as tk
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 import requests
 import websockets
@@ -34,7 +34,7 @@ class SupabaseCloudSync:
     def update_config(self, config: Dict[str, Any]) -> None:
         self.supabase_url = (config.get("supabase_url") or "").rstrip("/")
         self.supabase_key = config.get("supabase_anon_key") or ""
-        self.agent_token = config.get("agent_token") or ""
+        self.agent_token = (config.get("agent_token") or "").strip()
 
     @property
     def is_configured(self) -> bool:
@@ -47,13 +47,24 @@ class SupabaseCloudSync:
             "Content-Type": "application/json",
         }
 
-    def sync_input_mode_async(self, input_mode: str, wheel_type: str = "") -> None:
+    def sync_input_mode_async(
+        self,
+        input_mode: str,
+        wheel_type: str = "",
+        on_done: Optional[Callable[[bool, str, str], None]] = None,
+    ) -> None:
         if not self.is_configured:
+            if on_done:
+                on_done(
+                    True,
+                    "Agente activo en modo local (333 Hz). Abre Assetto Corsa Competizione y entra a pista.",
+                    "",
+                )
             return
 
         def _task() -> None:
             try:
-                requests.post(
+                resp = requests.post(
                     f"{self.supabase_url}/rest/v1/rpc/update_agent_input_mode",
                     headers=self._headers(),
                     json={
@@ -61,10 +72,33 @@ class SupabaseCloudSync:
                         "p_input_mode": input_mode,
                         "p_wheel_type": wheel_type,
                     },
-                    timeout=5,
+                    timeout=6,
                 )
+                if resp.ok:
+                    data = resp.json() if resp.text else {}
+                    username = ""
+                    if isinstance(data, dict):
+                        username = data.get("discord_username") or ""
+                    if on_done:
+                        on_done(
+                            True,
+                            "Sincronizado con la web y Supabase. Abre Assetto Corsa Competizione y sal a pista; el agente inyectará los setups automáticamente.",
+                            username,
+                        )
+                else:
+                    if on_done:
+                        on_done(
+                            False,
+                            "Agente local activo, pero el Token no coincide con ninguna cuenta en Supabase. Verifica el token en la pestaña Agente PC.",
+                            "",
+                        )
             except Exception:
-                pass
+                if on_done:
+                    on_done(
+                        True,
+                        "Configuración guardada localmente. Escuchando Assetto Corsa Competizione a 333 Hz.",
+                        "",
+                    )
 
         threading.Thread(target=_task, daemon=True).start()
 
@@ -147,6 +181,7 @@ class ApexDesktopAgentApp:
         self.latest_lap_event: Optional[Dict[str, Any]] = None
         self.running = True
         self._ws_clients: Set[Any] = set()
+        self._last_heartbeat: float = 0.0
 
         self.root = tk.Tk()
         self.selector_ui = InputModeSelectorWindow(
@@ -166,6 +201,10 @@ class ApexDesktopAgentApp:
         )
         self._ws_thread.start()
 
+        # Si ya tenía configuración guardada de antes, validarla automáticamente al abrir
+        if self.config.get("input_mode") in ("keyboard", "gamepad", "wheel"):
+            self._on_config_applied(self.config)
+
         self.root.after(50, self._refresh_hud_loop)
 
     def _on_config_applied(self, updated_cfg: Dict[str, Any]) -> None:
@@ -175,7 +214,22 @@ class ApexDesktopAgentApp:
         self.hud.set_input_mode(mode)
         self.voice.enabled = bool(updated_cfg.get("voice_enabled", True))
         self.cloud_sync.update_config(updated_cfg)
-        self.cloud_sync.sync_input_mode_async(mode, updated_cfg.get("wheel_type", ""))
+        self._last_heartbeat = time.time()
+
+        def _ui_callback(success: bool, msg: str, username: str) -> None:
+            try:
+                self.root.after(
+                    0,
+                    lambda: self.selector_ui.set_sync_feedback(
+                        success, msg, username, mode
+                    ),
+                )
+            except Exception:
+                pass
+
+        self.cloud_sync.sync_input_mode_async(
+            mode, updated_cfg.get("wheel_type", ""), on_done=_ui_callback
+        )
 
     def _physics_loop_333hz(self) -> None:
         target_dt = 1.0 / 333.0
@@ -257,6 +311,18 @@ class ApexDesktopAgentApp:
         else:
             self.selector_ui.set_live_connection_status(False)
 
+        # Latido cada 15s hacia Supabase mientras el agente esté abierto y configurado
+        now = time.time()
+        if (
+            now - self._last_heartbeat > 15.0
+            and self.cloud_sync.is_configured
+            and self.config.get("input_mode") in ("keyboard", "gamepad", "wheel")
+        ):
+            self._last_heartbeat = now
+            self.cloud_sync.sync_input_mode_async(
+                self.config["input_mode"], self.config.get("wheel_type", "")
+            )
+
         if self.running:
             self.root.after(50, self._refresh_hud_loop)
 
@@ -324,6 +390,8 @@ class ApexDesktopAgentApp:
     def run(self) -> None:
         try:
             self.root.mainloop()
+        except KeyboardInterrupt:
+            pass
         finally:
             self.running = False
             self.shm_reader.close()
