@@ -340,7 +340,19 @@ class ApexDesktopAgentApp:
     def _refresh_hud_loop(self) -> None:
         sample = self.latest_sample
         is_live = bool(sample is not None and sample.is_live_acc)
-        self.hud.update_telemetry(sample, self.analyzer.live_alert if is_live else None)
+        is_speaking = bool(getattr(self.voice, "is_speaking", False))
+        current_speech = ""
+        if self.ai_engineer and self.ai_engineer.current_radio_event:
+            current_speech = self.ai_engineer.current_radio_event.text
+        elif getattr(self.voice, "last_spoken_text", ""):
+            current_speech = self.voice.last_spoken_text
+
+        self.hud.update_telemetry(
+            sample=sample,
+            live_alert=self.analyzer.live_alert if is_live else None,
+            radio_text=current_speech,
+            is_speaking=is_speaking,
+        )
 
         if is_live and sample is not None:
             self.selector_ui.set_live_connection_status(

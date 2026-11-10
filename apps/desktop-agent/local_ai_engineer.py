@@ -65,6 +65,7 @@ class LocalAIEngineer:
         self.upcoming_corner_data: Optional[Dict[str, Any]] = None
         self.current_radio_event: Optional[RadioMessageEvent] = None
         self.recent_radio_calls: List[Dict[str, Any]] = []
+        self._greeted_session: bool = False
 
     def set_input_mode(self, mode: str) -> None:
         if mode in ("keyboard", "gamepad", "wheel"):
@@ -96,6 +97,14 @@ class LocalAIEngineer:
         pos = sample.normalized_pos
         speed_mps = max(10.0, sample.speed_kmh / 3.6)
         track_len = float(self.track_knowledge.length_m)
+
+        # Saludo de inicio de sesión por radio
+        if not self._greeted_session and sample.speed_kmh > 45.0:
+            self._greeted_session = True
+            t_name = self.track_knowledge.display_name if self.track_knowledge else "pista"
+            greeting = f"¡Radio comprobada! Hola compañero, soy Álvaro, tu ingeniero de pista en {t_name}. Estoy monitoreando tu telemetría a 333 hercios. Te iré cantando las referencias de frenada y curvas con tiempo. ¡Vamos a hacer una gran sesión!"
+            self._broadcast_radio(greeting, "praise")
+            self.last_speech_ts = now + 1.5
 
         # Si cambió de vuelta, reiniciamos el seguidor de curva hablada
         if sample.completed_laps != self.current_lap_number:

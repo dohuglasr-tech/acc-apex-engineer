@@ -3,6 +3,133 @@
 import React, { useState } from "react";
 import { useTelemetry, EngineerState } from "@/lib/telemetry-store";
 
+function AgentAvatarLiveWeb({ isTransmitting }: { isTransmitting: boolean }) {
+  return (
+    <div className="relative w-16 h-16 flex-shrink-0 flex items-center justify-center">
+      <svg
+        viewBox="0 0 80 80"
+        className="w-full h-full drop-shadow-md select-none"
+      >
+        <defs>
+          <radialGradient id="headGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor={isTransmitting ? "#1E1E2E" : "#14141E"} />
+            <stop offset="100%" stopColor="#0A0A10" />
+          </radialGradient>
+        </defs>
+
+        {/* Diadema de Auriculares Superior */}
+        <path
+          d="M 12 36 A 28 28 0 0 1 68 36"
+          fill="none"
+          stroke={isTransmitting ? "#E10600" : "#3F3F46"}
+          strokeWidth="3.5"
+          strokeLinecap="round"
+        />
+
+        {/* Cabeza Base */}
+        <circle
+          cx="40"
+          cy="40"
+          r="24"
+          fill="url(#headGlow)"
+          stroke={isTransmitting ? "#E10600" : "#27273A"}
+          strokeWidth="2"
+        />
+
+        {/* Auriculares Izq y Der */}
+        <rect
+          x="10"
+          y="30"
+          width="8"
+          height="18"
+          rx="3"
+          fill="#09090D"
+          stroke={isTransmitting ? "#E10600" : "#3F3F46"}
+          strokeWidth="1.5"
+        />
+        <rect
+          x="62"
+          y="30"
+          width="8"
+          height="18"
+          rx="3"
+          fill="#09090D"
+          stroke={isTransmitting ? "#E10600" : "#3F3F46"}
+          strokeWidth="1.5"
+        />
+
+        {/* LED de Auricular (Verde si Standby / Rojo parpadeante si Hablando) */}
+        <circle
+          cx="14"
+          cy="39"
+          r="2.5"
+          className={isTransmitting ? "animate-pulse fill-red-500" : "fill-emerald-400"}
+        />
+
+        {/* Brazo y Cápsula del Micrófono */}
+        <path
+          d="M 16 44 Q 24 54 33 53"
+          fill="none"
+          stroke="#71717A"
+          strokeWidth="2"
+        />
+        <circle
+          cx="34"
+          cy="53"
+          r="3"
+          fill={isTransmitting ? "#EF4444" : "#A1A1AA"}
+        />
+
+        {/* Ojos Dinámicos con Parpadeo Suave */}
+        <g className="animate-engineer-blink" style={{ transformOrigin: "40px 36px" }}>
+          {/* Ojo Izquierdo */}
+          <ellipse
+            cx="32"
+            cy="36"
+            rx="3.8"
+            ry="4.5"
+            fill={isTransmitting ? "#60A5FA" : "#38BDF8"}
+          />
+          <circle cx="32" cy="36" r="1.6" fill="#0369A1" />
+
+          {/* Ojo Derecho */}
+          <ellipse
+            cx="48"
+            cy="36"
+            rx="3.8"
+            ry="4.5"
+            fill={isTransmitting ? "#60A5FA" : "#38BDF8"}
+          />
+          <circle cx="48" cy="36" r="1.6" fill="#0369A1" />
+        </g>
+
+        {/* Boca Dinámica en Tiempo Real */}
+        {isTransmitting ? (
+          <ellipse
+            cx="40"
+            cy="49"
+            rx="6"
+            ry="4"
+            fill="#7F1D1D"
+            stroke="#EF4444"
+            strokeWidth="1.5"
+            className="animate-engineer-mouth"
+            style={{ transformOrigin: "40px 49px" }}
+          />
+        ) : (
+          <path
+            d="M 33 48 Q 40 51 47 48"
+            fill="none"
+            stroke="#38BDF8"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        )}
+      </svg>
+    </div>
+  );
+}
+
 export function LocalAIEngineerLiveRadar() {
   const { engineerState, frame, isAccLive } = useTelemetry();
   const [showHistory, setShowHistory] = useState(false);
@@ -20,6 +147,23 @@ export function LocalAIEngineerLiveRadar() {
 
   return (
     <div className="bg-[#0B0B0F] border border-zinc-800 rounded-lg overflow-hidden shadow-2xl">
+      <style>{`
+        @keyframes engineerBlink {
+          0%, 90%, 100% { transform: scaleY(1); }
+          95% { transform: scaleY(0.12); }
+        }
+        @keyframes engineerMouth {
+          0%, 100% { transform: scaleY(0.35) scaleX(0.85); }
+          50% { transform: scaleY(1.35) scaleX(1.1); }
+        }
+        .animate-engineer-blink {
+          animation: engineerBlink 3.4s infinite ease-in-out;
+        }
+        .animate-engineer-mouth {
+          animation: engineerMouth 0.22s infinite alternate ease-in-out;
+        }
+      `}</style>
+
       {/* Barra superior de estado del Ingeniero de Pista */}
       <div className="bg-[#121218] border-b border-zinc-800/80 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -180,12 +324,12 @@ export function LocalAIEngineerLiveRadar() {
           )}
         </div>
 
-        {/* COLUMNA 2: RADIO DE INGENIERO EN VIVO (4 cols) */}
+        {/* COLUMNA 2: AVATAR ANIMADO (OJOS Y BOCA) + RADIO DE INGENIERO EN VIVO (4 cols) */}
         <div className="lg:col-span-4 p-4 space-y-3 bg-[#0B0B10] flex flex-col justify-between">
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
-                COMUNICACIÓN DE RADIO // VOZ NEURAL
+                INGENIERO DE PISTA // VOZ NEURAL
               </div>
               {isTransmitting && (
                 <div className="flex items-center gap-1">
@@ -196,19 +340,23 @@ export function LocalAIEngineerLiveRadar() {
               )}
             </div>
 
-            {/* Mensaje de Radio en pantalla estilo F1 Team Radio */}
-            <div className="bg-zinc-950 border border-zinc-800/90 rounded-lg p-3.5 space-y-2 shadow-inner">
-              <div className="flex items-center justify-between text-[10px] font-mono">
-                <span className="text-[#E10600] font-bold uppercase tracking-wider">
-                  RADIO · PIT WALL
-                </span>
-                <span className="text-zinc-500">
-                  {radio?.time_str || "EN VIVO"}
-                </span>
+            {/* Avatar Animado (Ojos parpadeantes y boca que modula al hablar) + Transcripción */}
+            <div className="bg-zinc-950 border border-zinc-800/90 rounded-lg p-3 flex items-start gap-3 shadow-inner">
+              <AgentAvatarLiveWeb isTransmitting={isTransmitting} />
+
+              <div className="space-y-1.5 flex-1 min-w-0">
+                <div className="flex items-center justify-between text-[10px] font-mono">
+                  <span className="text-[#E10600] font-bold uppercase tracking-wider">
+                    {isTransmitting ? "HABLANDO EN CABINA" : "ÁLVARO · LISTO"}
+                  </span>
+                  <span className="text-zinc-500">
+                    {radio?.time_str || "EN VIVO"}
+                  </span>
+                </div>
+                <p className="text-xs text-white leading-relaxed font-sans font-medium">
+                  &ldquo;{radio?.text || "Adelante, mantén el ritmo. Te avisaré de cada frenada."}&rdquo;
+                </p>
               </div>
-              <p className="text-xs text-white leading-relaxed font-sans font-medium">
-                &ldquo;{radio?.text || "Adelante, mantén el ritmo. Te avisaré de cada frenada."}&rdquo;
-              </p>
             </div>
           </div>
 
@@ -318,4 +466,3 @@ export function LocalAIEngineerLiveRadar() {
     </div>
   );
 }
-
