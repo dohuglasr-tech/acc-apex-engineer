@@ -27,3 +27,4 @@ acc-apex-engineer/
 │       └── 001_schema_rls.sql      # Esquema PostgreSQL con Row-Level Security + RPCs de Agente
 └── vercel.json                     # Configuración de despliegue automático en Vercel
 ```
+

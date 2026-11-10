@@ -226,3 +226,4 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
     </div>
   );
 }
+

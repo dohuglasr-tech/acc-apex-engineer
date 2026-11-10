@@ -1,7 +1,7 @@
 -- ============================================================================
 -- ACC Apex Engineer Pro - Migración 001: Esquema Multi-Usuario con RLS Estricto
 -- Autenticación: Discord OAuth vía Supabase Auth
--- Aislamiento: 100% privado por usuario (auth.uid() = id / user_id)
+-- Aislamiento: 100% privado por usuario ((select auth.uid()) = id / user_id)
 -- ============================================================================
 
 create extension if not exists "pgcrypto";
@@ -58,29 +58,84 @@ create table if not exists public.user_laps (
   created_at timestamptz default now()
 );
 
--- Índices para consultas rápidas por usuario
+-- Índices para consultas rápidas por usuario y evaluación RLS
 create index if not exists idx_user_setups_user_id on public.user_setups(user_id, created_at desc);
 create index if not exists idx_user_laps_user_id on public.user_laps(user_id, created_at desc);
 create index if not exists idx_profiles_agent_token on public.profiles(agent_token);
 
+-- Garantizar permisos sobre el esquema expuesto para el rol authenticated
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.profiles to authenticated;
+grant select, insert, update, delete on public.user_setups to authenticated;
+grant select, insert, update, delete on public.user_laps to authenticated;
+
 -- ============================================================================
--- Row-Level Security (Aislamiento total entre cuentas)
+-- Row-Level Security (Aislamiento total entre cuentas con InitPlan caching)
 -- ============================================================================
 alter table public.profiles enable row level security;
 alter table public.user_setups enable row level security;
 alter table public.user_laps enable row level security;
 
-drop policy if exists "Usuarios ven y editan solo su perfil" on public.profiles;
-create policy "Usuarios ven y editan solo su perfil" on public.profiles
-  for all using (auth.uid() = id) with check (auth.uid() = id);
+-- Políticas de public.profiles
+drop policy if exists "Usuarios ven solo su perfil" on public.profiles;
+create policy "Usuarios ven solo su perfil" on public.profiles
+  for select to authenticated
+  using ( (select auth.uid()) = id );
 
-drop policy if exists "Usuarios ven y crean solo sus propios setups" on public.user_setups;
-create policy "Usuarios ven y crean solo sus propios setups" on public.user_setups
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "Usuarios insertan solo su perfil" on public.profiles;
+create policy "Usuarios insertan solo su perfil" on public.profiles
+  for insert to authenticated
+  with check ( (select auth.uid()) = id );
 
-drop policy if exists "Usuarios ven y crean solo sus propias vueltas" on public.user_laps;
-create policy "Usuarios ven y crean solo sus propias vueltas" on public.user_laps
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+drop policy if exists "Usuarios actualizan solo su perfil" on public.profiles;
+create policy "Usuarios actualizan solo su perfil" on public.profiles
+  for update to authenticated
+  using ( (select auth.uid()) = id )
+  with check ( (select auth.uid()) = id );
+
+-- Políticas de public.user_setups
+drop policy if exists "Usuarios ven solo sus propios setups" on public.user_setups;
+create policy "Usuarios ven solo sus propios setups" on public.user_setups
+  for select to authenticated
+  using ( (select auth.uid()) = user_id );
+
+drop policy if exists "Usuarios crean solo sus propios setups" on public.user_setups;
+create policy "Usuarios crean solo sus propios setups" on public.user_setups
+  for insert to authenticated
+  with check ( (select auth.uid()) = user_id );
+
+drop policy if exists "Usuarios actualizan solo sus propios setups" on public.user_setups;
+create policy "Usuarios actualizan solo sus propios setups" on public.user_setups
+  for update to authenticated
+  using ( (select auth.uid()) = user_id )
+  with check ( (select auth.uid()) = user_id );
+
+drop policy if exists "Usuarios eliminan solo sus propios setups" on public.user_setups;
+create policy "Usuarios eliminan solo sus propios setups" on public.user_setups
+  for delete to authenticated
+  using ( (select auth.uid()) = user_id );
+
+-- Políticas de public.user_laps
+drop policy if exists "Usuarios ven solo sus propias vueltas" on public.user_laps;
+create policy "Usuarios ven solo sus propias vueltas" on public.user_laps
+  for select to authenticated
+  using ( (select auth.uid()) = user_id );
+
+drop policy if exists "Usuarios crean solo sus propias vueltas" on public.user_laps;
+create policy "Usuarios crean solo sus propias vueltas" on public.user_laps
+  for insert to authenticated
+  with check ( (select auth.uid()) = user_id );
+
+drop policy if exists "Usuarios actualizan solo sus propias vueltas" on public.user_laps;
+create policy "Usuarios actualizan solo sus propias vueltas" on public.user_laps
+  for update to authenticated
+  using ( (select auth.uid()) = user_id )
+  with check ( (select auth.uid()) = user_id );
+
+drop policy if exists "Usuarios eliminan solo sus propias vueltas" on public.user_laps;
+create policy "Usuarios eliminan solo sus propias vueltas" on public.user_laps
+  for delete to authenticated
+  using ( (select auth.uid()) = user_id );
 
 -- ============================================================================
 -- Trigger automático: Crea el perfil privado al iniciar sesión con Discord OAuth
@@ -118,8 +173,6 @@ create trigger on_auth_user_created
 
 -- ============================================================================
 -- RPCs seguras para el Agente Ejecutable Local (.exe) usando agent_token
--- Permite al ejecutable sincronizar vueltas y setups del propietario del token
--- sin exponer jamás datos de otros usuarios.
 -- ============================================================================
 create or replace function public.verify_agent_token(p_agent_token uuid)
 returns jsonb

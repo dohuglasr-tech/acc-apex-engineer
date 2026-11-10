@@ -149,3 +149,4 @@ class OverlayHUD:
                 text=f"✓ {src_tag} · Alturas {sample.ride_height[0]:.0f}/{sample.ride_height[1]:.0f}mm",
                 fg="#34D399",
             )
+

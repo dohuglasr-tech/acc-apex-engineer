@@ -377,3 +377,4 @@ class AutoSetupInjector:
         versioned_file.write_text(serialized, encoding="utf-8")
 
         return live_file, new_setup, changes, version_num
+

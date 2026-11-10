@@ -157,3 +157,4 @@ export function LapTelemetryChart({ trace }: { trace: TracePoint[] }) {
     </div>
   );
 }
+

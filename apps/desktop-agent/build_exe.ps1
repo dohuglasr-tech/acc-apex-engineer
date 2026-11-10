@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 # ACC Apex Engineer Pro - Empaquetador del Ejecutable Único (.exe)
 # Usa siempre el entorno virtual local (.venv) siguiendo las buenas prácticas
 # =============================================================================
@@ -32,3 +32,4 @@ if (-not (Test-Path $WebDownloadsDir)) {
 Copy-Item -Force "dist\ACC_Apex_Engineer.exe" (Join-Path $WebDownloadsDir "ACC_Apex_Engineer.exe")
 
 Write-Host "✅ Compilación completada: dist\ACC_Apex_Engineer.exe" -ForegroundColor Green
+

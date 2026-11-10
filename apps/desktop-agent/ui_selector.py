@@ -302,3 +302,4 @@ class InputModeSelectorWindow:
             f"Se ha generado e inyectado exitosamente el setup para {mode.upper()} en:\n\n{path_str}\n\n"
             "Entra al garaje de ACC -> Setups y carga 'APEX_AUTO_LIVE'.",
         )
+
