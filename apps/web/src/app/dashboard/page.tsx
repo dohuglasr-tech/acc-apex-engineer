@@ -6,146 +6,169 @@ import { useTelemetry } from "@/lib/telemetry-store";
 import { LiveMoTeCGauges } from "@/components/LiveMoTeCGauges";
 import { LapTelemetryChart } from "@/components/LapTelemetryChart";
 import { QRMobileConnect } from "@/components/QRMobileConnect";
-import { AlertTriangle, Sparkles, Sliders, Zap } from "lucide-react";
 
 function formatLapTime(ms: number): string {
+  if (!ms || ms <= 0) return "--:--.---";
   const min = Math.floor(ms / 60000);
   const sec = ((ms % 60000) / 1000).toFixed(3);
   return `${min}:${Number(sec) < 10 ? "0" : ""}${sec}`;
 }
 
 export default function DashboardPage() {
-  const {
-    frame,
-    trace,
-    inputMode,
-    liveAlert,
-    setups,
-    drivingErrors,
-    triggerForceInject,
-  } = useTelemetry();
+  const { frame, trace, isAccLive, agentConnected, liveAlert } = useTelemetry();
 
-  const latestSetup = setups[0];
+  if (!isAccLive || !frame) {
+    return (
+      <div className="space-y-12">
+        {/* Tabla limpia en espera estilo F1 Standings */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse tabular-nums">
+            <thead>
+              <tr className="border-b border-zinc-800 text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
+                <th className="py-3 pr-4">CH.</th>
+                <th className="py-3 px-4">TELEMETRY MODULE</th>
+                <th className="py-3 px-4">SOURCE</th>
+                <th className="py-3 px-4">SAMPLING RATE</th>
+                <th className="py-3 pl-4 text-right">STATE</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-900 text-xs">
+              <tr>
+                <td className="py-4 pr-4 font-mono text-zinc-500">01</td>
+                <td className="py-4 px-4 font-medium text-white">
+                  Desktop Telemetry Agent (.EXE)
+                </td>
+                <td className="py-4 px-4 font-mono text-zinc-400">
+                  ws://localhost:8765
+                </td>
+                <td className="py-4 px-4 font-mono text-zinc-400">60 FPS</td>
+                <td className="py-4 pl-4 text-right font-mono">
+                  <span
+                    className={
+                      agentConnected ? "text-emerald-400" : "text-zinc-500"
+                    }
+                  >
+                    {agentConnected ? "CONNECTED" : "WAITING FOR AGENT"}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td className="py-4 pr-4 font-mono text-zinc-500">02</td>
+                <td className="py-4 px-4 font-medium text-white">
+                  ACC Physics Shared Memory
+                </td>
+                <td className="py-4 px-4 font-mono text-zinc-400">
+                  Local\acpmf_physics
+                </td>
+                <td className="py-4 px-4 font-mono text-zinc-400">333 HZ</td>
+                <td className="py-4 pl-4 text-right font-mono text-zinc-500">
+                  STANDBY (LAUNCH ACC)
+                </td>
+              </tr>
+              <tr>
+                <td className="py-4 pr-4 font-mono text-zinc-500">03</td>
+                <td className="py-4 px-4 font-medium text-white">
+                  Real-Time Setup Injector
+                </td>
+                <td className="py-4 px-4 font-mono text-zinc-400">
+                  Documents\Assetto Corsa Competizione\Setups
+                </td>
+                <td className="py-4 px-4 font-mono text-zinc-400">ON LAP END</td>
+                <td className="py-4 pl-4 text-right font-mono text-zinc-500">
+                  READY
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-  return (
-    <div className="space-y-6">
-      {/* Barra superior de estado de sesión, tiempos de vuelta y botón de Auto-Inyección */}
-      <div className="rounded-xl bg-[#0F1626] border border-slate-800 p-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-6">
-          <div>
-            <div className="text-[11px] font-mono text-slate-400 uppercase">
-              Vuelta Actual (#{frame.completed_laps + 1})
-            </div>
-            <div className="text-xl font-black font-mono text-sky-400">
-              {formatLapTime(frame.current_lap_ms)}
-            </div>
+        <div className="py-12 border-t border-b border-zinc-900 text-center space-y-5">
+          <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-zinc-500">
+            NO ACTIVE TRACK SESSION DETECTED
           </div>
-
-          <div>
-            <div className="text-[11px] font-mono text-slate-400 uppercase">
-              Última Vuelta
-            </div>
-            <div className="text-xl font-bold font-mono text-white">
-              {formatLapTime(frame.last_lap_ms)}
-            </div>
-          </div>
-
-          <div>
-            <div className="text-[11px] font-mono text-slate-400 uppercase">
-              Mejor Vuelta Personal
-            </div>
-            <div className="text-xl font-bold font-mono text-emerald-400">
-              {formatLapTime(frame.best_lap_ms)}
-            </div>
-          </div>
-
-          <div className="hidden lg:block pl-4 border-l border-slate-800">
-            <div className="text-[11px] font-mono text-slate-400 uppercase">
-              Último Setup Auto-Inyectado
-            </div>
-            <div className="text-xs font-mono font-bold text-purple-300">
-              {latestSetup?.file_name} (v{latestSetup?.version_num} ·{" "}
-              {(inputMode || "wheel").toUpperCase()})
-            </div>
+          <p className="text-sm text-zinc-300 max-w-lg mx-auto leading-relaxed">
+            La aplicación se encuentra en espera limpia. Ejecuta el agente local y
+            entra a pista en Assetto Corsa Competizione para iniciar la lectura en
+            tiempo real a 333 Hz.
+          </p>
+          <div className="pt-2 flex items-center justify-center gap-4">
+            <Link
+              href="/download"
+              className="px-6 py-2.5 rounded-full border border-zinc-600 hover:border-white text-xs font-medium text-white transition"
+            >
+              Download Desktop Agent
+            </Link>
+            <Link
+              href="/onboarding"
+              className="px-6 py-2.5 rounded-full border border-zinc-800 hover:border-zinc-500 text-xs font-medium text-zinc-300 hover:text-white transition"
+            >
+              Configure Input Hardware
+            </Link>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={triggerForceInject}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow-lg shadow-emerald-500/20"
-          >
-            <Zap className="w-4 h-4" />
-            Auto-Inyectar Setup Ahora
-          </button>
-          <Link
-            href="/coach"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition"
-          >
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            Ver {drivingErrors.length} Errores/Soluciones
-          </Link>
+        <QRMobileConnect />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-10">
+      {/* Cabecera de tiempos de sesión en vivo */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 border-b border-zinc-800 pb-6 tabular-nums">
+        <div>
+          <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
+            CURRENT LAP (#{frame.completed_laps + 1})
+          </div>
+          <div className="text-2xl font-semibold font-mono text-white mt-1">
+            {formatLapTime(frame.current_lap_ms)}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
+            LAST LAP
+          </div>
+          <div className="text-2xl font-semibold font-mono text-zinc-300 mt-1">
+            {formatLapTime(frame.last_lap_ms)}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
+            PERSONAL BEST
+          </div>
+          <div className="text-2xl font-semibold font-mono text-emerald-400 mt-1">
+            {formatLapTime(frame.best_lap_ms)}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
+            FUEL REMAINING
+          </div>
+          <div className="text-2xl font-semibold font-mono text-white mt-1">
+            {frame.fuel.toFixed(1)} L
+          </div>
         </div>
       </div>
 
-      {/* Alerta en vivo de 333 Hz */}
       {liveAlert && (
-        <div className="rounded-xl bg-rose-500/15 border border-rose-500/40 px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 text-xs sm:text-sm font-bold text-rose-200 font-mono">
-            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
-            <span>{liveAlert}</span>
-          </div>
-          <span className="text-[11px] font-mono text-rose-300 uppercase">
-            Detector 333 Hz Activo
+        <div className="border-l-2 border-[#E10600] bg-zinc-950 px-4 py-3 flex items-center justify-between">
+          <span className="text-xs font-mono text-white uppercase tracking-wider">
+            {liveAlert}
+          </span>
+          <span className="text-[10px] font-mono text-zinc-500 uppercase">
+            333 HZ LIVE DIAGNOSTIC
           </span>
         </div>
       )}
 
-      {/* Relojes MoTeC en vivo a 60 FPS */}
       <LiveMoTeCGauges frame={frame} />
 
-      {/* Gráfica superpuesta de la vuelta */}
       <LapTelemetryChart trace={trace} />
 
-      {/* Resumen rápido de último ajuste de setup + QR Móvil */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-5 rounded-xl bg-[#0F1626] border border-slate-800 p-5 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-emerald-400 uppercase font-mono flex items-center gap-1.5">
-                <Sliders className="w-3.5 h-3.5" /> Auto-Inyector en Tiempo Real
-              </span>
-              <Link
-                href="/setups"
-                className="text-xs text-sky-400 hover:underline font-mono"
-              >
-                Ver tabla completa →
-              </Link>
-            </div>
-            <h3 className="text-sm font-bold text-white mb-2">
-              Cambios aplicados en `{latestSetup?.file_name}`
-            </h3>
-            <ul className="space-y-2">
-              {latestSetup?.changes_summary.slice(0, 3).map((c, i) => (
-                <li
-                  key={i}
-                  className="text-xs bg-slate-900/90 border border-slate-800 rounded-lg p-2.5"
-                >
-                  <div className="font-bold text-slate-200">{c.area}</div>
-                  <div className="font-mono text-emerald-400 text-[11px] mt-0.5">
-                    {c.before} → {c.after}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        <div className="lg:col-span-7">
-          <QRMobileConnect />
-        </div>
-      </div>
+      <QRMobileConnect />
     </div>
   );
 }
-

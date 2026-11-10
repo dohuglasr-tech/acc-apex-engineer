@@ -3,59 +3,44 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { InputMode, useTelemetry } from "@/lib/telemetry-store";
-import { CheckCircle2, Gamepad2, Gauge, Keyboard, ShieldAlert } from "lucide-react";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const { inputMode, setInputMode, profile } = useTelemetry();
   const [selected, setSelected] = useState<InputMode>(inputMode || "wheel");
-  const [wheelModel, setWheelModel] = useState(
-    profile.wheel_type || "Logitech G29 / G923 / Fanatec CSL DD"
-  );
+  const [wheelModel, setWheelModel] = useState(profile?.wheel_type || "");
   const [saving, setSaving] = useState(false);
 
   const options: {
+    code: string;
     id: InputMode;
     title: string;
     subtitle: string;
-    icon: React.ComponentType<{ className?: string }>;
-    specs: string[];
+    specs: string;
   }[] = [
     {
+      code: "01",
       id: "keyboard",
-      title: "Teclado (Keyboard)",
-      subtitle: "Pulsación digital W / A / S / D o flechas",
-      icon: Keyboard,
-      specs: [
-        "Steer Ratio suave (16–18) para evitar saturar las gomas delanteras",
-        "Brake Torque 92–95% y ABS 4–6 para impedir bloqueos instantáneos",
-        "Margen aerodinámico trasero +1.0% y TC progresivo al pulsar W al 100%",
-        "Compensación automática de sobrecalentamiento delantero (scrub) en PSI",
-      ],
+      title: "Keyboard",
+      subtitle: "Digital Binary Actuation",
+      specs:
+        "Steer Ratio 16–18 // Brake Torque 93% // ABS 5 // Progressive TC curve",
     },
     {
+      code: "02",
       id: "gamepad",
-      title: "Mando / Gamepad (Xbox · DualSense)",
-      subtitle: "Stick analógico corto + gatillos LT/RT (L2/R2)",
-      icon: Gamepad2,
-      specs: [
-        "Slow Rebound delantero endurecido anti-latigazo al soltar el gatillo izquierdo",
-        "Steer Ratio progresivo (15–16) adaptado al recorrido del stick",
-        "Margen aerodinámico trasero +0.5% para evitar pérdidas súbitas de cola",
-        "Guías de modulación de gatillo y apoyo de stick a 45° en cada curva",
-      ],
+      title: "Controller / Gamepad",
+      subtitle: "Analog Thumbstick & Triggers",
+      specs:
+        "Stiffened Front Slow Rebound // Steer Ratio 15:1 // +0.5% Rear Aero Balance",
     },
     {
+      code: "03",
       id: "wheel",
-      title: "Volante FFB (Direct Drive / Belt / Gear)",
-      subtitle: "Volante Force Feedback + Pedales (Potenciómetro o Célula de Carga)",
-      icon: Gauge,
-      specs: [
-        "Steer Ratio directo (12–14) para máxima precisión en vértice",
-        "Brake Torque al 100% y ABS 2–3 para aprovechar el trail-braking real",
-        "Rake aerodinámico agresivo para máxima rotación en curvas rápidas",
-        "Diagnóstico de regresión de pedal de freno y ángulo óptimo de deriva",
-      ],
+      title: "Steering Wheel & Pedals",
+      subtitle: "Force Feedback & Load-Cell",
+      specs:
+        "Direct Steer Ratio 12–14 // 100% Brake Torque // ABS 2–3 // Maximum Rake",
     },
   ];
 
@@ -67,102 +52,95 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto py-4 space-y-6">
-      <div className="rounded-2xl bg-[#0F1626] border border-slate-800 p-6 space-y-2">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-          <ShieldAlert className="w-3.5 h-3.5" /> PASO OBLIGATORIO DE CALIBRACIÓN FÍSICA
+    <div className="space-y-10">
+      <div className="space-y-1">
+        <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-zinc-500">
+          HARDWARE CALIBRATION // PHYSICS ADAPTATION
         </div>
-        <h1 className="text-2xl font-extrabold text-white">
-          ¿Con qué periférico conduces en Assetto Corsa Competizione?
+        <h1 className="text-lg font-semibold text-white">
+          Select Primary Input Device
         </h1>
-        <p className="text-xs sm:text-sm text-slate-400">
-          Tanto el <strong>Auto-Inyector de Setups (`APEX_AUTO_LIVE.json`)</strong> como el{" "}
-          <strong>Detector de Errores por Curva</strong> adaptan todas sus leyes físicas a 333 Hz
-          según si juegas con <strong>Teclado</strong>, <strong>Mando</strong> o{" "}
-          <strong>Volante</strong>.
-        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {options.map((opt) => {
-          const Icon = opt.icon;
-          const isSelected = selected === opt.id;
-          return (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => setSelected(opt.id)}
-              className={`text-left rounded-2xl p-5 border transition flex flex-col justify-between ${
-                isSelected
-                  ? "bg-sky-950/30 border-sky-400 ring-2 ring-sky-400/30"
-                  : "bg-[#0F1626] border-slate-800 hover:border-slate-700"
-              }`}
-            >
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <div
-                    className={`w-11 h-11 rounded-xl flex items-center justify-center ${
-                      isSelected
-                        ? "bg-sky-500 text-slate-950"
-                        : "bg-slate-900 text-sky-400"
-                    }`}
-                  >
-                    <Icon className="w-6 h-6" />
-                  </div>
-                  {isSelected && (
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-sky-400">
-                      <CheckCircle2 className="w-4 h-4" /> Seleccionado
-                    </span>
-                  )}
-                </div>
-
-                <h2 className="text-base font-bold text-white">{opt.title}</h2>
-                <p className="text-xs text-slate-400 mt-1 mb-4">{opt.subtitle}</p>
-
-                <ul className="space-y-2 border-t border-slate-800/80 pt-3">
-                  {opt.specs.map((sp, i) => (
-                    <li
-                      key={i}
-                      className="text-xs text-slate-300 flex items-start gap-1.5 leading-relaxed"
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse tabular-nums">
+          <thead>
+            <tr className="border-b border-zinc-800 text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
+              <th className="py-3 pr-4">ID</th>
+              <th className="py-3 px-4">HARDWARE PROFILE</th>
+              <th className="py-3 px-4">CONTROL TYPE</th>
+              <th className="py-3 px-4">PHYSICS & SETUP PARAMETERS</th>
+              <th className="py-3 pl-4 text-right">STATE</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-900 text-xs">
+            {options.map((opt) => {
+              const isSelected = selected === opt.id;
+              return (
+                <tr
+                  key={opt.id}
+                  onClick={() => setSelected(opt.id)}
+                  className={`cursor-pointer transition ${
+                    isSelected ? "bg-zinc-950" : "hover:bg-zinc-950/60"
+                  }`}
+                >
+                  <td className="py-5 pr-4 font-mono text-zinc-500">
+                    {opt.code}
+                  </td>
+                  <td className="py-5 px-4 font-medium text-white flex items-center gap-3">
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        isSelected ? "bg-[#E10600]" : "bg-zinc-700"
+                      }`}
+                    />
+                    <span>{opt.title}</span>
+                  </td>
+                  <td className="py-5 px-4 text-zinc-400">{opt.subtitle}</td>
+                  <td className="py-5 px-4 font-mono text-zinc-400">
+                    {opt.specs}
+                  </td>
+                  <td className="py-5 pl-4 text-right font-mono">
+                    <span
+                      className={`text-[10px] uppercase tracking-wider px-3 py-1 rounded-full border ${
+                        isSelected
+                          ? "border-[#E10600] text-white"
+                          : "border-zinc-800 text-zinc-500"
+                      }`}
                     >
-                      <span className="text-emerald-400 font-bold">•</span>
-                      <span>{sp}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </button>
-          );
-        })}
+                      {isSelected ? "SELECTED" : "SELECT"}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {selected === "wheel" && (
-        <div className="rounded-xl bg-[#0F1626] border border-slate-800 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="text-xs text-slate-300">
-            <strong>Modelo de tu Volante (opcional):</strong> Se guarda en tu perfil privado de Supabase.
+        <div className="border-t border-zinc-900 pt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="text-xs text-zinc-400">
+            Wheel Base / Pedals Model (Optional)
           </div>
           <input
             type="text"
             value={wheelModel}
             onChange={(e) => setWheelModel(e.target.value)}
-            className="w-full sm:w-80 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white font-mono"
-            placeholder="Ej: Logitech G29, Moza R9, Fanatec CSL DD"
+            className="w-full sm:w-80 bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-zinc-500"
+            placeholder="e.g. Fanatec CSL DD / Moza R9 / G29"
           />
         </div>
       )}
 
-      <div className="flex justify-end">
+      <div className="pt-4 flex justify-center">
         <button
           onClick={handleConfirm}
           disabled={saving}
-          className="px-6 py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-sky-500 to-emerald-500 hover:from-sky-400 hover:to-emerald-400 text-slate-950 shadow-lg shadow-sky-500/20 transition"
+          className="px-8 py-2.5 rounded-full border border-zinc-500 hover:border-white text-xs font-medium text-white transition"
         >
-          {saving
-            ? "Aplicando Física Personalizada..."
-            : `Confirmar Modo ${selected.toUpperCase()} e Ir al Dashboard 333 Hz →`}
+          {saving ? "Saving Profile..." : "Apply Hardware Profile"}
         </button>
       </div>
     </div>
   );
 }
-

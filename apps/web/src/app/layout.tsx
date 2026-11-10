@@ -4,9 +4,9 @@ import { TelemetryProvider } from "@/lib/telemetry-store";
 import { Navbar } from "@/components/Navbar";
 
 export const metadata: Metadata = {
-  title: "ACC Apex Engineer Pro · Telemetría 333 Hz & Auto-Inyector de Setups",
+  title: "APEX ENGINEER // ACC Telemetry & Setup System",
   description:
-    "Ingeniero de pista en tiempo real a 333 Hz, detector de errores por curva y auto-inyector de setups físicos para Assetto Corsa Competizione con cuentas aisladas en Supabase y login con Discord.",
+    "333 Hz Shared Memory Telemetry, Corner Diagnostics, and Real-Time Setup Injection for Assetto Corsa Competizione.",
 };
 
 export default function RootLayout({
@@ -16,13 +16,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" className="dark">
-      <body className="min-h-screen bg-[#070A12] text-slate-100 antialiased selection:bg-sky-500 selection:text-slate-950">
+      <body className="min-h-screen bg-black text-zinc-100 antialiased selection:bg-[#E10600] selection:text-white">
         <TelemetryProvider>
           <Navbar />
-          <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">{children}</main>
+          <main className="max-w-6xl mx-auto px-6 py-10">{children}</main>
         </TelemetryProvider>
       </body>
     </html>
   );
 }
-

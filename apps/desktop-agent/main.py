@@ -1,10 +1,10 @@
 """
 ACC Apex Engineer Pro - Orquestador Principal del Agente Ejecutable Local (main.py)
   - Bucle de lectura de Memoria Compartida de ACC a 333 Hz (cada 3 ms)
-  - Servidor WebSocket Local a 60 FPS (ws://0.0.0.0:8765) para Web Dashboard en PC y Celular (vía QR)
+  - Sin simulaciones artificiales: permanece en espera limpia hasta que ACC entra en pista
+  - Servidor WebSocket Local a 60 FPS (ws://0.0.0.0:8765)
   - Auto-Inyector de Setups en tiempo real en Documents\\Assetto Corsa Competizione\\Setups
-  - Sincronización Cloud 100% privada por usuario en Supabase (vía RPC con agent_token)
-  - Overlay HUD Transparente (0 MB VRAM) + Ingeniero de Voz en Español
+  - Sincronización Cloud privada por usuario en Supabase (vía RPC con agent_token)
 """
 
 from __future__ import annotations
@@ -28,11 +28,6 @@ from voice_engineer import VoiceEngineer
 
 
 class SupabaseCloudSync:
-    """
-    Sincroniza de forma asíncrona los setups auto-inyectados y las vueltas del usuario
-    hacia su cuenta privada de Supabase usando su agent_token único (con RLS).
-    """
-
     def __init__(self, config: Dict[str, Any]) -> None:
         self.update_config(config)
 
@@ -86,7 +81,6 @@ class SupabaseCloudSync:
 
         def _task() -> None:
             try:
-                # 1. Insertar setup auto-inyectado en public.user_setups
                 resp_setup = requests.post(
                     f"{self.supabase_url}/rest/v1/rpc/agent_insert_setup",
                     headers=self._headers(),
@@ -107,7 +101,6 @@ class SupabaseCloudSync:
                 )
                 setup_id = resp_setup.json() if resp_setup.ok else None
 
-                # 2. Insertar vuelta y diagnóstico de errores en public.user_laps
                 requests.post(
                     f"{self.supabase_url}/rest/v1/rpc/agent_insert_lap",
                     headers=self._headers(),
@@ -143,7 +136,7 @@ class ApexDesktopAgentApp:
         self.config = load_agent_config()
         initial_mode = self.config.get("input_mode") or "wheel"
 
-        self.shm_reader = ACCSharedMemoryReader(enable_demo_when_idle=True)
+        self.shm_reader = ACCSharedMemoryReader()
         self.analyzer = TelemetryLapAnalyzer(input_mode=initial_mode)
         self.injector = AutoSetupInjector(input_mode=initial_mode)
         self.voice = VoiceEngineer(enabled=bool(self.config.get("voice_enabled", True)))
@@ -155,30 +148,25 @@ class ApexDesktopAgentApp:
         self.running = True
         self._ws_clients: Set[Any] = set()
 
-        # Interfaz Tkinter (Selector Obligatorio + Overlay HUD Click-Through)
         self.root = tk.Tk()
         self.selector_ui = InputModeSelectorWindow(
             root=self.root,
             config=self.config,
             on_config_applied=self._on_config_applied,
-            on_force_inject=self._force_inject_now,
         )
         self.hud = OverlayHUD(self.root, input_mode=initial_mode)
 
-        # Hilo de lectura física a 333 Hz (cada 3 ms)
         self._physics_thread = threading.Thread(
             target=self._physics_loop_333hz, daemon=True, name="Physics333HzThread"
         )
         self._physics_thread.start()
 
-        # Hilo de servidor WebSocket a 60 FPS para Web Dashboard (PC y Celular vía QR)
         self._ws_thread = threading.Thread(
             target=self._run_websocket_server, daemon=True, name="WebSocket60FpsThread"
         )
         self._ws_thread.start()
 
-        # Refresco visual del Overlay HUD a ~30 FPS en el hilo principal
-        self.root.after(33, self._refresh_hud_loop)
+        self.root.after(50, self._refresh_hud_loop)
 
     def _on_config_applied(self, updated_cfg: Dict[str, Any]) -> None:
         mode = updated_cfg.get("input_mode") or "wheel"
@@ -189,48 +177,13 @@ class ApexDesktopAgentApp:
         self.cloud_sync.update_config(updated_cfg)
         self.cloud_sync.sync_input_mode_async(mode, updated_cfg.get("wheel_type", ""))
 
-        mode_es = {"keyboard": "teclado", "gamepad": "mando", "wheel": "volante"}.get(mode, mode)
-        self.voice.speak(f"Modo {mode_es} activado. Telemetría a 333 hercios y auto inyector listos.")
-
-    def _force_inject_now(self) -> str:
-        sample = self.latest_sample or self.shm_reader.read_sample()
-        assert sample is not None
-        live_path, setup_json, changes, version_num = self.injector.inject_optimized_setup(
-            car_model=sample.car_model,
-            track_name=sample.track_name,
-            hot_pressures=sample.tyre_pressures,
-            core_temps=sample.tyre_temps_core,
-            brake_temps_avg=sample.brake_temps,
-            bottoming_events=1 if sample.ride_height[0] < 43.0 else 0,
-            understeer_ratio=0.25,
-            oversteer_entry_events=1,
-            tc_cut_ratio=0.20,
-            air_temp=sample.air_temp,
-            road_temp=sample.road_temp,
-            best_lap_ms=sample.best_lap_ms,
-        )
-        self.latest_setup_event = {
-            "version_num": version_num,
-            "file_name": live_path.name,
-            "full_path": str(live_path),
-            "car_model": sample.car_model,
-            "track_name": sample.track_name,
-            "input_mode": self.injector.input_mode,
-            "changes_summary": changes,
-            "setup_json": setup_json,
-        }
-        self.hud.set_setup_status(f"APEX_AUTO_LIVE.json (v{version_num}) INYECTADO")
-        self.voice.speak(f"Setup automático versión {version_num} inyectado en tu carpeta de Assetto Corsa Competizione.")
-        return str(live_path)
-
     def _physics_loop_333hz(self) -> None:
-        target_dt = 1.0 / 333.0  # 0.003003 segundos (333 Hz)
+        target_dt = 1.0 / 333.0
         while self.running:
             t0 = time.perf_counter()
             sample = self.shm_reader.read_sample()
-            if sample is not None:
-                self.latest_sample = sample
-                # Solo procesar vuelta si el usuario ya eligió periférico
+            self.latest_sample = sample
+            if sample is not None and sample.is_live_acc:
                 if self.config.get("input_mode") in ("keyboard", "gamepad", "wheel"):
                     completed_lap = self.analyzer.process_sample(sample)
                     if completed_lap is not None:
@@ -277,7 +230,7 @@ class ApexDesktopAgentApp:
             "telemetry_trace": lap.telemetry_trace,
         }
 
-        self.hud.set_setup_status(f"APEX_AUTO_LIVE.json (v{version_num}) INYECTADO")
+        self.hud.set_setup_status(f"APEX_AUTO_LIVE.json (v{version_num})")
         primary_err = lap.driving_errors[0]["type"] if lap.driving_errors else None
         self.voice.announce_lap_and_setup(
             lap_number=lap.lap_number,
@@ -295,10 +248,17 @@ class ApexDesktopAgentApp:
         )
 
     def _refresh_hud_loop(self) -> None:
-        if self.latest_sample is not None:
-            self.hud.update_telemetry(self.latest_sample, self.analyzer.live_alert)
+        sample = self.latest_sample
+        self.hud.update_telemetry(sample, self.analyzer.live_alert if sample else None)
+        if sample is not None and sample.is_live_acc:
+            self.selector_ui.set_live_connection_status(
+                True, sample.track_name, sample.car_model
+            )
+        else:
+            self.selector_ui.set_live_connection_status(False)
+
         if self.running:
-            self.root.after(33, self._refresh_hud_loop)
+            self.root.after(50, self._refresh_hud_loop)
 
     def _run_websocket_server(self) -> None:
         async def handler(websocket: Any) -> None:
@@ -307,15 +267,11 @@ class ApexDesktopAgentApp:
                 async for raw_msg in websocket:
                     try:
                         cmd = json.loads(raw_msg)
-                        if cmd.get("action") == "set_input_mode" and cmd.get("input_mode") in (
-                            "keyboard",
-                            "gamepad",
-                            "wheel",
-                        ):
+                        if cmd.get("action") == "set_input_mode" and cmd.get(
+                            "input_mode"
+                        ) in ("keyboard", "gamepad", "wheel"):
                             self.config["input_mode"] = cmd["input_mode"]
                             self._on_config_applied(self.config)
-                        elif cmd.get("action") == "force_inject":
-                            self._force_inject_now()
                     except Exception:
                         pass
             except Exception:
@@ -325,15 +281,28 @@ class ApexDesktopAgentApp:
 
         async def broadcaster() -> None:
             while self.running:
-                if self._ws_clients and self.latest_sample is not None:
-                    payload = json.dumps({
-                        "type": "telemetry_frame",
-                        "input_mode": self.config.get("input_mode") or "wheel",
-                        "live_alert": self.analyzer.live_alert,
-                        "sample": self.latest_sample.to_dict(),
-                        "latest_setup": self.latest_setup_event,
-                        "latest_lap": self.latest_lap_event,
-                    })
+                if self._ws_clients:
+                    sample = self.latest_sample
+                    if sample is not None and sample.is_live_acc:
+                        payload = json.dumps(
+                            {
+                                "type": "telemetry_frame",
+                                "is_live_acc": True,
+                                "input_mode": self.config.get("input_mode") or "wheel",
+                                "live_alert": self.analyzer.live_alert,
+                                "sample": sample.to_dict(),
+                                "latest_setup": self.latest_setup_event,
+                                "latest_lap": self.latest_lap_event,
+                            }
+                        )
+                    else:
+                        payload = json.dumps(
+                            {
+                                "type": "telemetry_standby",
+                                "is_live_acc": False,
+                                "input_mode": self.config.get("input_mode") or None,
+                            }
+                        )
                     stale = set()
                     for ws in list(self._ws_clients):
                         try:
@@ -341,7 +310,7 @@ class ApexDesktopAgentApp:
                         except Exception:
                             stale.add(ws)
                     self._ws_clients -= stale
-                await asyncio.sleep(1.0 / 60.0)  # Stream a 60 FPS
+                await asyncio.sleep(1.0 / 60.0)
 
         async def main_ws() -> None:
             async with websockets.serve(handler, "0.0.0.0", 8765):
@@ -364,4 +333,3 @@ class ApexDesktopAgentApp:
 if __name__ == "__main__":
     app = ApexDesktopAgentApp()
     app.run()
-

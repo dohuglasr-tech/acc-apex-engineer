@@ -4,14 +4,14 @@ Lee exclusivamente en modo LECTURA (ACCESS_READ):
   - Local\\acpmf_physics
   - Local\\acpmf_graphics
   - Local\\acpmf_static
-Incluye simulador físico GT3 de respaldo cuando ACC no está en ejecución para pruebas en vivo.
+Sin simulaciones ni datos ficticios: solo devuelve datos cuando Assetto Corsa Competizione
+está abierto y con sesión activa en pista.
 """
 
 from __future__ import annotations
 
 import ctypes
 from ctypes import c_float, c_int32, c_wchar
-import math
 import mmap
 import time
 from dataclasses import dataclass, field
@@ -196,18 +196,18 @@ class TelemetrySample:
     brake: float
     steer_angle: float
     fuel: float
-    tyre_pressures: List[float] = field(default_factory=lambda: [26.8, 26.8, 26.8, 26.8])
-    tyre_temps_core: List[float] = field(default_factory=lambda: [82.0, 82.0, 80.0, 80.0])
-    brake_temps: List[float] = field(default_factory=lambda: [490.0, 490.0, 460.0, 460.0])
-    wheel_slip: List[float] = field(default_factory=lambda: [0.2, 0.2, 0.2, 0.2])
-    suspension_travel: List[float] = field(default_factory=lambda: [0.02, 0.02, 0.02, 0.02])
-    ride_height: List[float] = field(default_factory=lambda: [54.0, 68.0])
+    tyre_pressures: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    tyre_temps_core: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    brake_temps: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    wheel_slip: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    suspension_travel: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    ride_height: List[float] = field(default_factory=lambda: [0.0, 0.0])
     yaw_rate: float = 0.0
     tc_in_action: bool = False
     abs_in_action: bool = False
-    air_temp: float = 22.0
-    road_temp: float = 29.0
-    brake_bias: float = 56.5
+    air_temp: float = 0.0
+    road_temp: float = 0.0
+    brake_bias: float = 0.0
 
     def to_dict(self) -> Dict:
         return {
@@ -252,20 +252,15 @@ class TelemetrySample:
 class ACCSharedMemoryReader:
     """
     Lee Local\\acpmf_physics, Local\\acpmf_graphics y Local\\acpmf_static a 333 Hz (cada 3 ms).
-    NUNCA abre archivos del juego en modo escritura ni modifica configuraciones de controles.
+    Retorna None si Assetto Corsa Competizione está cerrado o fuera de sesión activa.
     """
 
-    def __init__(self, enable_demo_when_idle: bool = True) -> None:
-        self.enable_demo_when_idle = enable_demo_when_idle
+    def __init__(self) -> None:
         self._mm_physics: Optional[mmap.mmap] = None
         self._mm_graphics: Optional[mmap.mmap] = None
         self._mm_static: Optional[mmap.mmap] = None
-        self._sim_start = time.perf_counter()
-        self._sim_packet = 0
-        self._sim_laps = 1
-        self._sim_last_lap_ms = 138420
-        self._sim_best_lap_ms = 137890
-        self._last_sim_norm = 0.0
+        self._last_packet_id: int = -1
+        self._stale_count: int = 0
 
     def _open_shared_memory(self) -> bool:
         try:
@@ -307,166 +302,88 @@ class ACCSharedMemoryReader:
         self._mm_static = None
 
     def read_sample(self) -> Optional[TelemetrySample]:
-        if self._open_shared_memory():
-            try:
-                assert self._mm_physics and self._mm_graphics and self._mm_static
-                self._mm_physics.seek(0)
-                phys = SPageFilePhysics.from_buffer_copy(
-                    self._mm_physics.read(ctypes.sizeof(SPageFilePhysics))
-                )
-                self._mm_graphics.seek(0)
-                gfx = SPageFileGraphic.from_buffer_copy(
-                    self._mm_graphics.read(ctypes.sizeof(SPageFileGraphic))
-                )
-                self._mm_static.seek(0)
-                stc = SPageFileStatic.from_buffer_copy(
-                    self._mm_static.read(ctypes.sizeof(SPageFileStatic))
-                )
-
-                # Si packetId > 0 y status != 0 (AC_OFF = 0), ACC está transmitiendo física real
-                if phys.packetId > 0 and gfx.status > 0:
-                    ride_front = float(phys.rideHeight[0])
-                    ride_rear = float(phys.rideHeight[1])
-                    # ACC entrega rideHeight en metros (ej: 0.054 -> 54 mm)
-                    if 0.0 < ride_front < 1.0:
-                        ride_front *= 1000.0
-                    if 0.0 < ride_rear < 1.0:
-                        ride_rear *= 1000.0
-
-                    return TelemetrySample(
-                        timestamp=time.time(),
-                        is_live_acc=True,
-                        packet_id=int(phys.packetId),
-                        car_model=(stc.carModel or "mclaren_720s_gt3_evo").strip(),
-                        track_name=(stc.track or "spa").strip(),
-                        driver_name=(stc.playerNick or stc.playerName or "Piloto").strip(),
-                        completed_laps=int(gfx.completedLaps),
-                        current_lap_ms=max(0, int(gfx.iCurrentTime)),
-                        last_lap_ms=max(0, int(gfx.iLastTime)),
-                        best_lap_ms=max(0, int(gfx.iBestTime)),
-                        sector_index=int(gfx.currentSectorIndex),
-                        last_sector_ms=max(0, int(gfx.lastSectorTime)),
-                        normalized_pos=max(0.0, min(1.0, float(gfx.normalizedCarPosition))),
-                        is_in_pit=bool(gfx.isInPit),
-                        is_in_pit_lane=bool(gfx.isInPitLane),
-                        speed_kmh=max(0.0, float(phys.speedKmh)),
-                        rpms=max(0, int(phys.rpms)),
-                        max_rpm=max(7500, int(stc.maxRpm or phys.currentMaxRpm or 8000)),
-                        gear=int(phys.gear) - 1,  # ACC: 0=R, 1=N, 2=1st
-                        gas=max(0.0, min(1.0, float(phys.gas))),
-                        brake=max(0.0, min(1.0, float(phys.brake))),
-                        steer_angle=float(phys.steerAngle),
-                        fuel=max(0.0, float(phys.fuel)),
-                        tyre_pressures=[float(phys.wheelsPressure[i]) for i in range(4)],
-                        tyre_temps_core=[float(phys.tyreCoreTemperature[i]) for i in range(4)],
-                        brake_temps=[float(phys.brakeTemp[i]) for i in range(4)],
-                        wheel_slip=[float(phys.wheelSlip[i]) for i in range(4)],
-                        suspension_travel=[float(phys.suspensionTravel[i]) for i in range(4)],
-                        ride_height=[ride_front, ride_rear],
-                        yaw_rate=float(phys.localAngularVel[1]),
-                        tc_in_action=bool(phys.tcinAction),
-                        abs_in_action=bool(phys.absInAction),
-                        air_temp=float(phys.airTemp or 22.0),
-                        road_temp=float(phys.roadTemp or 28.0),
-                        brake_bias=float(phys.brakeBias * 100.0 if phys.brakeBias <= 1.0 else phys.brakeBias),
-                    )
-            except Exception:
-                self.close()
-
-        if not self.enable_demo_when_idle:
+        if not self._open_shared_memory():
             return None
 
-        return self._generate_synthetic_sample()
+        try:
+            assert self._mm_physics and self._mm_graphics and self._mm_static
+            self._mm_physics.seek(0)
+            phys = SPageFilePhysics.from_buffer_copy(
+                self._mm_physics.read(ctypes.sizeof(SPageFilePhysics))
+            )
+            self._mm_graphics.seek(0)
+            gfx = SPageFileGraphic.from_buffer_copy(
+                self._mm_graphics.read(ctypes.sizeof(SPageFileGraphic))
+            )
+            self._mm_static.seek(0)
+            stc = SPageFileStatic.from_buffer_copy(
+                self._mm_static.read(ctypes.sizeof(SPageFileStatic))
+            )
 
-    def _generate_synthetic_sample(self) -> TelemetrySample:
-        """
-        Genera una telemetría sintética de Spa-Francorchamps a 333 Hz cuando ACC está cerrado,
-        para permitir validar en vivo el Dashboard, el Detector de Errores y el Auto-Inyector.
-        """
-        now = time.perf_counter()
-        elapsed = now - self._sim_start
-        self._sim_packet += 1
+            # AC_OFF = 0: El juego no está en sesión activa
+            if phys.packetId <= 0 or gfx.status <= 0:
+                return None
 
-        lap_duration_s = 45.0  # Vuelta acelerada de demostración cada 45s
-        norm_pos = (elapsed % lap_duration_s) / lap_duration_s
-        if norm_pos < self._last_sim_norm:
-            self._sim_laps += 1
-            self._sim_last_lap_ms = 137650 + int(math.sin(self._sim_laps) * 650)
-            self._sim_best_lap_ms = min(self._sim_best_lap_ms, self._sim_last_lap_ms)
-        self._last_sim_norm = norm_pos
+            # Verificar que el paquete de física esté avanzando (juego en pista, no congelado)
+            if phys.packetId == self._last_packet_id:
+                self._stale_count += 1
+                if self._stale_count > 1000:  # ~3 segundos sin paquetes nuevos
+                    return None
+            else:
+                self._stale_count = 0
+                self._last_packet_id = int(phys.packetId)
 
-        # Perfil de curvas principales de Spa (La Source, Eau Rouge, Les Combes, Pouhon, Bus Stop)
-        corner_zones = [0.08, 0.18, 0.34, 0.56, 0.72, 0.91]
-        corner_intensity = 0.0
-        corner_sign = 1.0
-        for idx, cz in enumerate(corner_zones):
-            dist = abs(norm_pos - cz)
-            if dist < 0.045:
-                local_factor = 1.0 - (dist / 0.045)
-                if local_factor > corner_intensity:
-                    corner_intensity = local_factor
-                    corner_sign = 1.0 if idx % 2 == 0 else -1.0
+            ride_front = float(phys.rideHeight[0])
+            ride_rear = float(phys.rideHeight[1])
+            if 0.0 < ride_front < 1.0:
+                ride_front *= 1000.0
+            if 0.0 < ride_rear < 1.0:
+                ride_rear *= 1000.0
 
-        brake = max(0.0, min(1.0, (corner_intensity - 0.15) * 1.45)) if corner_intensity > 0.25 else 0.0
-        gas = 1.0 - min(1.0, corner_intensity * 1.15)
-        speed = 278.0 - (corner_intensity * 168.0) + 8.0 * math.sin(norm_pos * math.tau * 3)
-        gear = max(1, min(6, int(speed // 43) + 1))
-        rpms = int(4900 + ((speed % 43) / 43.0) * 2950)
-        steer = corner_sign * (corner_intensity ** 1.2) * 0.68
+            car_model = (stc.carModel or "").strip()
+            track_name = (stc.track or "").strip()
+            if not car_model or not track_name:
+                return None
 
-        # Simular leve sobrepresión delantera izquierda y compresión en Eau Rouge (norm_pos ~ 0.18)
-        eau_rouge = abs(norm_pos - 0.18) < 0.018
-        ride_f = 39.5 if eau_rouge else (52.0 - brake * 9.5)
-        ride_r = 56.0 if eau_rouge else (67.0 + brake * 5.0)
-
-        slip_front = 0.35 + (1.28 if corner_intensity > 0.78 else corner_intensity * 0.7)
-        slip_rear = 0.30 + (1.35 if (corner_intensity > 0.55 and gas > 0.65) else corner_intensity * 0.5)
-
-        return TelemetrySample(
-            timestamp=time.time(),
-            is_live_acc=False,
-            packet_id=self._sim_packet,
-            car_model="mclaren_720s_gt3_evo",
-            track_name="spa",
-            driver_name="Demo Telemetría 333Hz",
-            completed_laps=self._sim_laps,
-            current_lap_ms=int(norm_pos * 137800),
-            last_lap_ms=self._sim_last_lap_ms,
-            best_lap_ms=self._sim_best_lap_ms,
-            sector_index=0 if norm_pos < 0.33 else (1 if norm_pos < 0.66 else 2),
-            last_sector_ms=44820,
-            normalized_pos=norm_pos,
-            is_in_pit=False,
-            is_in_pit_lane=False,
-            speed_kmh=speed,
-            rpms=rpms,
-            max_rpm=8000,
-            gear=gear,
-            gas=gas,
-            brake=brake,
-            steer_angle=steer,
-            fuel=max(12.0, 62.0 - self._sim_laps * 2.8 - norm_pos * 2.8),
-            tyre_pressures=[
-                27.35 + 0.15 * math.sin(elapsed * 0.2),
-                27.10 + 0.10 * math.cos(elapsed * 0.2),
-                26.45 + 0.10 * math.sin(elapsed * 0.15),
-                26.55 + 0.10 * math.cos(elapsed * 0.15),
-            ],
-            tyre_temps_core=[88.5, 85.0, 79.5, 80.2],
-            brake_temps=[
-                545.0 + brake * 120.0,
-                535.0 + brake * 115.0,
-                465.0 + brake * 85.0,
-                460.0 + brake * 85.0,
-            ],
-            wheel_slip=[slip_front, slip_front * 0.92, slip_rear, slip_rear * 0.95],
-            suspension_travel=[0.032, 0.030, 0.028, 0.027],
-            ride_height=[ride_f, ride_r],
-            yaw_rate=steer * 0.55,
-            tc_in_action=bool(slip_rear > 1.25 and gas > 0.5),
-            abs_in_action=bool(brake > 0.88),
-            air_temp=23.0,
-            road_temp=31.0,
-            brake_bias=56.2,
-        )
-
+            return TelemetrySample(
+                timestamp=time.time(),
+                is_live_acc=True,
+                packet_id=int(phys.packetId),
+                car_model=car_model,
+                track_name=track_name,
+                driver_name=(stc.playerNick or stc.playerName or "Driver").strip(),
+                completed_laps=int(gfx.completedLaps),
+                current_lap_ms=max(0, int(gfx.iCurrentTime)),
+                last_lap_ms=max(0, int(gfx.iLastTime)),
+                best_lap_ms=max(0, int(gfx.iBestTime)),
+                sector_index=int(gfx.currentSectorIndex),
+                last_sector_ms=max(0, int(gfx.lastSectorTime)),
+                normalized_pos=max(0.0, min(1.0, float(gfx.normalizedCarPosition))),
+                is_in_pit=bool(gfx.isInPit),
+                is_in_pit_lane=bool(gfx.isInPitLane),
+                speed_kmh=max(0.0, float(phys.speedKmh)),
+                rpms=max(0, int(phys.rpms)),
+                max_rpm=max(7500, int(stc.maxRpm or phys.currentMaxRpm or 8000)),
+                gear=int(phys.gear) - 1,
+                gas=max(0.0, min(1.0, float(phys.gas))),
+                brake=max(0.0, min(1.0, float(phys.brake))),
+                steer_angle=float(phys.steerAngle),
+                fuel=max(0.0, float(phys.fuel)),
+                tyre_pressures=[float(phys.wheelsPressure[i]) for i in range(4)],
+                tyre_temps_core=[float(phys.tyreCoreTemperature[i]) for i in range(4)],
+                brake_temps=[float(phys.brakeTemp[i]) for i in range(4)],
+                wheel_slip=[float(phys.wheelSlip[i]) for i in range(4)],
+                suspension_travel=[float(phys.suspensionTravel[i]) for i in range(4)],
+                ride_height=[ride_front, ride_rear],
+                yaw_rate=float(phys.localAngularVel[1]),
+                tc_in_action=bool(phys.tcinAction),
+                abs_in_action=bool(phys.absInAction),
+                air_temp=float(phys.airTemp),
+                road_temp=float(phys.roadTemp),
+                brake_bias=float(
+                    phys.brakeBias * 100.0 if phys.brakeBias <= 1.0 else phys.brakeBias
+                ),
+            )
+        except Exception:
+            self.close()
+            return None
