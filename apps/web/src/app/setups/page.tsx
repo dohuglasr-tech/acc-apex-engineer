@@ -11,7 +11,7 @@ export default function SetupsPage() {
     return (
       <div className="py-16 border-t border-b border-zinc-900 text-center space-y-3">
         <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-zinc-500">
-          NO INJECTED SETUPS IN CURRENT HISTORY
+          SIN SETUPS INYECTADOS EN EL HISTORIAL ACTUAL
         </div>
         <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
           Los archivos de setup (.json) se calculan e inyectan automáticamente en

@@ -22,10 +22,10 @@ export function QRMobileConnect() {
     <div className="border-t border-zinc-800/90 pt-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
       <div className="space-y-2 max-w-xl">
         <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-zinc-500">
-          SECOND SCREEN TELEMETRY // ZERO VRAM OVERHEAD
+          SEGUNDA PANTALLA DE TELEMETRÍA // CERO CONSUMO DE VRAM
         </div>
         <h3 className="text-sm font-semibold text-white">
-          Mobile Pit Wall Display (Wi-Fi Local Stream)
+          Pantalla Auxiliar Móvil o Tablet (Red Local Wi-Fi)
         </h3>
         <p className="text-xs text-zinc-400 leading-relaxed">
           Conecta un teléfono o tablet en la misma red local para visualizar los
@@ -35,7 +35,7 @@ export function QRMobileConnect() {
         <div className="flex flex-wrap items-center gap-3 pt-2">
           <div className="flex items-center gap-2 border border-zinc-800 bg-zinc-950 px-3 py-1.5">
             <span className="text-[10px] font-mono uppercase text-zinc-500">
-              HOST IP
+              IP LOCAL
             </span>
             <input
               type="text"
@@ -49,7 +49,7 @@ export function QRMobileConnect() {
             onClick={() => setAgentHost(lanIp)}
             className="px-4 py-1.5 rounded-full border border-zinc-700 hover:border-white text-xs font-medium text-white transition"
           >
-            Connect Host
+            Vincular IP
           </button>
         </div>
       </div>
@@ -58,7 +58,7 @@ export function QRMobileConnect() {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={qrApiUrl}
-          alt="Mobile Telemetry QR"
+          alt="Código QR Telemetría Móvil"
           width={108}
           height={108}
         />

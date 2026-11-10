@@ -32,7 +32,7 @@ export function SetupDiffViewer({ setup }: { setup: UserSetupRecord }) {
             </span>
           </div>
           <p className="text-[11px] text-zinc-500 font-mono mt-1">
-            TARGET PATH: {setup.full_path}
+            RUTA DESTINO: {setup.full_path}
           </p>
         </div>
 
@@ -40,7 +40,7 @@ export function SetupDiffViewer({ setup }: { setup: UserSetupRecord }) {
           onClick={handleDownloadJson}
           className="px-5 py-2 rounded-full border border-zinc-600 hover:border-white text-xs font-medium text-white transition"
         >
-          Export Setup JSON
+          Exportar Setup JSON
         </button>
       </div>
 
@@ -48,10 +48,10 @@ export function SetupDiffViewer({ setup }: { setup: UserSetupRecord }) {
         <table className="w-full text-left border-collapse text-xs">
           <thead>
             <tr className="border-b border-zinc-800 text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
-              <th className="py-3 pr-4">PARAMETER AREA</th>
-              <th className="py-3 px-4">PREVIOUS</th>
-              <th className="py-3 px-4">INJECTED</th>
-              <th className="py-3 pl-4">ENGINEERING RATIONALE</th>
+              <th className="py-3 pr-4">ÁREA Y PARÁMETRO</th>
+              <th className="py-3 px-4">ANTERIOR</th>
+              <th className="py-3 px-4">INYECTADO</th>
+              <th className="py-3 pl-4">JUSTIFICACIÓN DE INGENIERÍA</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-900">

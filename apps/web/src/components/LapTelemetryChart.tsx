@@ -46,21 +46,21 @@ export function LapTelemetryChart({ trace }: { trace: TracePoint[] }) {
     <div className="border-t border-zinc-800/90 pt-8">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
         <div className="text-xs font-semibold uppercase tracking-[0.14em] text-white">
-          LAP TELEMETRY TRACE (0% – 100% TRACK DISTANCE)
+          TRAZA DE TELEMETRÍA DE VUELTA (0% – 100% DISTANCIA DE PISTA)
         </div>
 
         <div className="flex items-center gap-6 text-[11px] font-mono text-zinc-400">
           <span className="flex items-center gap-2">
-            <span className="w-3 h-0.5 bg-white inline-block" /> SPEED
+            <span className="w-3 h-0.5 bg-white inline-block" /> VELOCIDAD
           </span>
           <span className="flex items-center gap-2">
-            <span className="w-3 h-0.5 bg-zinc-600 inline-block" /> REFERENCE
+            <span className="w-3 h-0.5 bg-zinc-600 inline-block" /> REFERENCIA
           </span>
           <span className="flex items-center gap-2">
-            <span className="w-3 h-0.5 bg-emerald-500 inline-block" /> THROTTLE
+            <span className="w-3 h-0.5 bg-emerald-500 inline-block" /> ACELERADOR
           </span>
           <span className="flex items-center gap-2">
-            <span className="w-3 h-0.5 bg-[#E10600] inline-block" /> BRAKE
+            <span className="w-3 h-0.5 bg-[#E10600] inline-block" /> FRENO
           </span>
         </div>
       </div>

@@ -21,26 +21,26 @@ export default function OnboardingPage() {
     {
       code: "01",
       id: "keyboard",
-      title: "Keyboard",
-      subtitle: "Digital Binary Actuation",
+      title: "Teclado",
+      subtitle: "Pulsación Digital Binaria",
       specs:
-        "Steer Ratio 16–18 // Brake Torque 93% // ABS 5 // Progressive TC curve",
+        "Dirección 16–18 // Fuerza de freno 93% // ABS 5 // Curva de TC progresiva",
     },
     {
       code: "02",
       id: "gamepad",
-      title: "Controller / Gamepad",
-      subtitle: "Analog Thumbstick & Triggers",
+      title: "Mando / Controlador",
+      subtitle: "Stick Analógico y Gatillos",
       specs:
-        "Stiffened Front Slow Rebound // Steer Ratio 15:1 // +0.5% Rear Aero Balance",
+        "Extensión lenta delantera firme // Dirección 15:1 // +0.5% Balance Aero Trasero",
     },
     {
       code: "03",
       id: "wheel",
-      title: "Steering Wheel & Pedals",
-      subtitle: "Force Feedback & Load-Cell",
+      title: "Volante y Pedales",
+      subtitle: "Force Feedback y Célula de Carga",
       specs:
-        "Direct Steer Ratio 12–14 // 100% Brake Torque // ABS 2–3 // Maximum Rake",
+        "Dirección directa 12–14 // Fuerza de freno 100% // ABS 2–3 // Rake Máximo",
     },
   ];
 
@@ -55,10 +55,10 @@ export default function OnboardingPage() {
     <div className="space-y-10">
       <div className="space-y-1">
         <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-zinc-500">
-          HARDWARE CALIBRATION // PHYSICS ADAPTATION
+          CALIBRACIÓN DE PERIFÉRICO // ADAPTACIÓN FÍSICA DE SETUPS
         </div>
         <h1 className="text-lg font-semibold text-white">
-          Select Primary Input Device
+          Selecciona tu Periférico de Conducción
         </h1>
       </div>
 
@@ -67,10 +67,10 @@ export default function OnboardingPage() {
           <thead>
             <tr className="border-b border-zinc-800 text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
               <th className="py-3 pr-4">ID</th>
-              <th className="py-3 px-4">HARDWARE PROFILE</th>
-              <th className="py-3 px-4">CONTROL TYPE</th>
-              <th className="py-3 px-4">PHYSICS & SETUP PARAMETERS</th>
-              <th className="py-3 pl-4 text-right">STATE</th>
+              <th className="py-3 px-4">PERFIL DE HARDWARE</th>
+              <th className="py-3 px-4">TIPO DE CONTROL</th>
+              <th className="py-3 px-4">PARÁMETROS DE FÍSICAS Y SETUP</th>
+              <th className="py-3 pl-4 text-right">ESTADO</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-900 text-xs">
@@ -107,7 +107,7 @@ export default function OnboardingPage() {
                           : "border-zinc-800 text-zinc-500"
                       }`}
                     >
-                      {isSelected ? "SELECTED" : "SELECT"}
+                      {isSelected ? "ACTIVO" : "ELEGIR"}
                     </span>
                   </td>
                 </tr>
@@ -120,14 +120,14 @@ export default function OnboardingPage() {
       {selected === "wheel" && (
         <div className="border-t border-zinc-900 pt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="text-xs text-zinc-400">
-            Wheel Base / Pedals Model (Optional)
+            Modelo de Base de Volante / Pedales (Opcional)
           </div>
           <input
             type="text"
             value={wheelModel}
             onChange={(e) => setWheelModel(e.target.value)}
             className="w-full sm:w-80 bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-xs text-white font-mono focus:outline-none focus:border-zinc-500"
-            placeholder="e.g. Fanatec CSL DD / Moza R9 / G29"
+            placeholder="Ej. Fanatec CSL DD / Moza R9 / G29"
           />
         </div>
       )}
@@ -138,7 +138,7 @@ export default function OnboardingPage() {
           disabled={saving}
           className="px-8 py-2.5 rounded-full border border-zinc-500 hover:border-white text-xs font-medium text-white transition"
         >
-          {saving ? "Saving Profile..." : "Apply Hardware Profile"}
+          {saving ? "Guardando Perfil..." : "Guardar Perfil de Periférico"}
         </button>
       </div>
     </div>

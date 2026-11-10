@@ -1,6 +1,6 @@
 """
 ACC Apex Engineer Pro - Ventana de Configuración del Agente Local (ui_selector.py)
-Diseño limpio de ingeniería de pista sin emojis ni simulaciones artificiales.
+Diseño limpio de ingeniería de pista en español, sin emojis ni simulaciones artificiales.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ class InputModeSelectorWindow:
         self.config = config
         self.on_config_applied = on_config_applied
 
-        self.root.title("ACC APEX ENGINEER // DESKTOP TELEMETRY AGENT")
+        self.root.title("ACC APEX ENGINEER // AGENTE DE TELEMETRÍA")
         self.root.geometry("600x540")
         self.root.configure(bg="#08080A")
         self.root.resizable(False, False)
@@ -96,14 +96,14 @@ class InputModeSelectorWindow:
         hdr.pack(fill="x")
         tk.Label(
             hdr,
-            text="APEX ENGINEER // 333 HZ TELEMETRY DAEMON",
+            text="APEX ENGINEER // MOTOR DE TELEMETRÍA A 333 HZ",
             fg="#FFFFFF",
             bg="#0E0E12",
             font=("Segoe UI", 11, "bold"),
         ).pack(anchor="w")
         tk.Label(
             hdr,
-            text="Lectura directa de memoria compartida ACC y auto-inyeccion en carpeta Setups.",
+            text="Lectura directa de memoria compartida ACC y auto-inyección en carpeta Setups.",
             fg="#71717A",
             bg="#0E0E12",
             font=("Segoe UI", 9),
@@ -114,7 +114,7 @@ class InputModeSelectorWindow:
 
         tk.Label(
             step1,
-            text="01 / PERIFERICO DE ENTRADA",
+            text="01 / PERIFÉRICO DE CONDUCCIÓN",
             fg="#E10600",
             bg="#08080A",
             font=("Consolas", 9, "bold"),
@@ -123,18 +123,18 @@ class InputModeSelectorWindow:
         modes = [
             (
                 "keyboard",
-                "TECLADO (KEYBOARD)",
-                "Steer Ratio 16-18, Brake Torque 93%, ABS 5, curva de traccion progresiva.",
+                "TECLADO",
+                "Dirección 16-18, Fuerza de freno 93%, ABS 5, curva de tracción progresiva.",
             ),
             (
                 "gamepad",
-                "MANDO (CONTROLLER / GAMEPAD)",
-                "Slow Rebound delantero compensado, Steer Ratio 15:1, margen aero +0.5%.",
+                "MANDO / CONTROLADOR",
+                "Extensión lenta delantera compensada, Dirección 15:1, margen aero +0.5%.",
             ),
             (
                 "wheel",
-                "VOLANTE FFB (WHEEL & PEDALS)",
-                "Steer Ratio directo 12-14, Brake Torque 100%, ABS 2-3, rake maximo.",
+                "VOLANTE Y PEDALES FFB",
+                "Dirección directa 12-14, Fuerza de freno 100%, ABS 2-3, rotación máxima.",
             ),
         ]
 
@@ -167,7 +167,7 @@ class InputModeSelectorWindow:
 
         tk.Label(
             step2,
-            text="02 / VINCULACION DE CUENTA (AGENT TOKEN)",
+            text="02 / TOKEN DE VINCULACIÓN DE CUENTA",
             fg="#E10600",
             bg="#08080A",
             font=("Consolas", 9, "bold"),
@@ -185,7 +185,7 @@ class InputModeSelectorWindow:
 
         tk.Checkbutton(
             step2,
-            text="Ingeniero de radio por voz neural activo durante sesion en pista",
+            text="Ingeniero de pista por voz neuronal en español activo durante sesión en pista",
             variable=self.voice_var,
             fg="#D4D4D8",
             bg="#08080A",
@@ -199,7 +199,7 @@ class InputModeSelectorWindow:
 
         tk.Button(
             btn_frame,
-            text="GUARDAR CONFIGURACION",
+            text="GUARDAR CONFIGURACIÓN",
             command=self._handle_apply,
             bg="#E10600",
             fg="#FFFFFF",
@@ -215,7 +215,7 @@ class InputModeSelectorWindow:
         lan_ip = get_local_lan_ip()
         self.lbl_status = tk.Label(
             self.root,
-            text=f"STANDBY  |  WS STREAM {lan_ip}:8765  |  ESPERANDO ASSETTO CORSA COMPETIZIONE",
+            text=f"EN ESPERA  |  STREAM LOCAL {lan_ip}:8765  |  ESPERANDO ASSETTO CORSA COMPETIZIONE",
             fg="#71717A",
             bg="#08080A",
             font=("Consolas", 8),
@@ -225,13 +225,13 @@ class InputModeSelectorWindow:
     def set_live_connection_status(self, is_live: bool, track: str = "", car: str = "") -> None:
         if is_live:
             self.lbl_status.configure(
-                text=f"ONLINE 333 HZ  |  {car.upper()} @ {track.upper()}",
+                text=f"EN PISTA 333 HZ  |  {car.upper()} @ {track.upper()}",
                 fg="#10B981",
             )
         else:
             lan_ip = get_local_lan_ip()
             self.lbl_status.configure(
-                text=f"STANDBY  |  WS STREAM {lan_ip}:8765  |  ESPERANDO SESION EN PISTA DE ACC",
+                text=f"EN ESPERA  |  STREAM LOCAL {lan_ip}:8765  |  ESPERANDO SESIÓN EN PISTA DE ACC",
                 fg="#71717A",
             )
 
@@ -239,8 +239,8 @@ class InputModeSelectorWindow:
         mode = self.selected_mode.get().strip()
         if mode not in ("keyboard", "gamepad", "wheel"):
             messagebox.showwarning(
-                "Seleccion Requerida",
-                "Selecciona tu periferico de entrada (Teclado, Mando o Volante).",
+                "Selección Requerida",
+                "Selecciona tu periférico de conducción (Teclado, Mando o Volante).",
             )
             return
 

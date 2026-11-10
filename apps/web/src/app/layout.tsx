@@ -4,9 +4,9 @@ import { TelemetryProvider } from "@/lib/telemetry-store";
 import { Navbar } from "@/components/Navbar";
 
 export const metadata: Metadata = {
-  title: "APEX ENGINEER // ACC Telemetry & Setup System",
+  title: "APEX ENGINEER // Telemetría y Auto-Inyección ACC (333 Hz)",
   description:
-    "333 Hz Shared Memory Telemetry, Corner Diagnostics, and Real-Time Setup Injection for Assetto Corsa Competizione.",
+    "Sistema de telemetría en tiempo real a 333 Hz, diagnóstico de conducción por curva y auto-inyección de setups para Assetto Corsa Competizione.",
 };
 
 export default function RootLayout({

@@ -9,10 +9,10 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
     frame.gear < 0 ? "R" : frame.gear === 0 ? "N" : String(frame.gear);
 
   const tyres = [
-    { pos: "01", code: "FL", name: "Front Left", idx: 0 },
-    { pos: "02", code: "FR", name: "Front Right", idx: 1 },
-    { pos: "03", code: "RL", name: "Rear Left", idx: 2 },
-    { pos: "04", code: "RR", name: "Rear Right", idx: 3 },
+    { pos: "01", code: "DI", name: "Delantero Izquierdo", idx: 0 },
+    { pos: "02", code: "DD", name: "Delantero Derecho", idx: 1 },
+    { pos: "03", code: "TI", name: "Trasero Izquierdo", idx: 2 },
+    { pos: "04", code: "TD", name: "Trasero Derecho", idx: 3 },
   ];
 
   return (
@@ -20,7 +20,7 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
       {/* Bloque Superior de Telemetría Primaria */}
       <div className="border-t border-b border-zinc-800/90 py-6">
         <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.18em] text-zinc-500 mb-3">
-          <span>ENGINE RPM // SHIFT INDICATOR</span>
+          <span>RÉGIMEN DE MOTOR // INDICADOR DE CAMBIO</span>
           <span>
             {frame.rpms} / {frame.max_rpm} RPM
           </span>
@@ -42,7 +42,7 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-6 tabular-nums">
           <div>
             <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-              SPEED
+              VELOCIDAD
             </div>
             <div className="text-3xl font-semibold text-white font-mono mt-1">
               {Math.round(frame.speed_kmh)}{" "}
@@ -52,7 +52,7 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
 
           <div>
             <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-              GEAR
+              MARCHA
             </div>
             <div className="text-3xl font-semibold text-white font-mono mt-1">
               {gearLabel}
@@ -61,7 +61,7 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
 
           <div>
             <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-              THROTTLE
+              ACELERADOR
             </div>
             <div className="text-3xl font-semibold text-emerald-400 font-mono mt-1">
               {Math.round(frame.gas * 100)}%
@@ -70,7 +70,7 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
 
           <div>
             <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-              BRAKE
+              FRENO
             </div>
             <div className="text-3xl font-semibold text-[#E10600] font-mono mt-1">
               {Math.round(frame.brake * 100)}%
@@ -79,7 +79,7 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
 
           <div>
             <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-              RIDE HEIGHT (F/R)
+              ALTURA (DEL/TRAS)
             </div>
             <div className="text-2xl font-semibold text-white font-mono mt-1">
               {frame.ride_height[0].toFixed(0)} / {frame.ride_height[1].toFixed(0)}{" "}
@@ -89,7 +89,7 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
 
           <div>
             <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
-              BRAKE BIAS
+              REPARTO FRENO
             </div>
             <div className="text-2xl font-semibold text-white font-mono mt-1">
               {frame.brake_bias.toFixed(1)}%
@@ -102,10 +102,10 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
       <div>
         <div className="flex items-center justify-between mb-4">
           <div className="text-xs font-semibold uppercase tracking-[0.14em] text-white">
-            PIRELLI DHE TYRE & BRAKE TELEMETRY (TARGET WINDOW: 26.8 – 26.9 PSI)
+            TELEMETRÍA DE NEUMÁTICOS PIRELLI DHE Y FRENOS (OBJETIVO: 26.8 – 26.9 PSI)
           </div>
           <div className="text-[11px] font-mono text-zinc-400">
-            AMBIENT {frame.air_temp.toFixed(1)}°C // TRACK{" "}
+            AMBIENTE {frame.air_temp.toFixed(1)}°C // ASFALTO{" "}
             {frame.road_temp.toFixed(1)}°C
           </div>
         </div>
@@ -115,11 +115,11 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
             <thead>
               <tr className="border-b border-zinc-800 text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
                 <th className="py-3 pr-4">POS.</th>
-                <th className="py-3 px-4">CORNER</th>
-                <th className="py-3 px-4">HOT PRESSURE</th>
-                <th className="py-3 px-4">CORE TEMP</th>
-                <th className="py-3 px-4">BRAKE DISC</th>
-                <th className="py-3 pl-4 text-right">STATUS</th>
+                <th className="py-3 px-4">RUEDA</th>
+                <th className="py-3 px-4">PRESIÓN EN CALIENTE</th>
+                <th className="py-3 px-4">TEMP. CARCASA</th>
+                <th className="py-3 px-4">DISCO DE FRENO</th>
+                <th className="py-3 pl-4 text-right">ESTADO</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-900 text-xs">
@@ -162,7 +162,7 @@ export function LiveMoTeCGauges({ frame }: { frame: TelemetryFrame }) {
                             : "border-zinc-700 text-zinc-400"
                         }`}
                       >
-                        {optimal ? "OPTIMAL WINDOW" : "ADJUSTING NEXT LAP"}
+                        {optimal ? "VENTANA ÓPTIMA" : "AJUSTANDO EN META"}
                       </span>
                     </td>
                   </tr>

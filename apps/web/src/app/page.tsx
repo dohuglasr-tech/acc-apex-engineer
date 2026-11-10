@@ -21,7 +21,7 @@ export default function HomePage() {
       <div className="text-center space-y-3">
         <div className="w-6 h-6 rounded-full border-2 border-[#E10600] border-t-transparent animate-spin mx-auto" />
         <p className="text-[11px] font-mono uppercase tracking-[0.14em] text-[#8E8E93]">
-          Initializing Telemetry System...
+          Iniciando sistema de telemetría...
         </p>
       </div>
     </div>

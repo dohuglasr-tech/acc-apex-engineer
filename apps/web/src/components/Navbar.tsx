@@ -11,21 +11,21 @@ export function Navbar() {
     useTelemetry();
 
   const navItems = [
-    { href: "/dashboard", label: "Telemetry" },
-    { href: "/coach", label: "Diagnostics" },
+    { href: "/dashboard", label: "Telemetría" },
+    { href: "/coach", label: "Diagnóstico" },
     { href: "/setups", label: "Setups" },
-    { href: "/onboarding", label: "Hardware" },
-    { href: "/download", label: "Desktop Agent" },
+    { href: "/onboarding", label: "Periférico" },
+    { href: "/download", label: "Agente PC" },
   ];
 
   const modeLabel =
     inputMode === "keyboard"
-      ? "KEYBOARD"
+      ? "TECLADO"
       : inputMode === "gamepad"
-      ? "CONTROLLER"
+      ? "MANDO"
       : inputMode === "wheel"
-      ? "WHEEL"
-      : "UNCONFIGURED";
+      ? "VOLANTE"
+      : "SIN CONFIGURAR";
 
   return (
     <header className="sticky top-0 z-40 bg-black">
@@ -72,7 +72,7 @@ export function Navbar() {
                     type="submit"
                     className="text-[11px] uppercase tracking-wider text-zinc-400 hover:text-white transition"
                   >
-                    Sign Out
+                    Cerrar sesión
                   </button>
                 </form>
               </div>
@@ -81,7 +81,7 @@ export function Navbar() {
                 href="/login"
                 className="text-xs font-medium text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-400 rounded-full px-4 py-1.5 transition"
               >
-                Sign In
+                Iniciar sesión
               </Link>
             )}
           </div>
@@ -95,14 +95,14 @@ export function Navbar() {
             <div>
               <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-zinc-500">
                 {isAccLive
-                  ? `LIVE TELEMETRY // ${frame?.car_model.replace(/_/g, " ")}`
-                  : "SESSION STATUS // STANDBY"}
+                  ? `TELEMETRÍA EN VIVO // ${frame?.car_model.replace(/_/g, " ")}`
+                  : "ESTADO DE SESIÓN // EN ESPERA"}
               </div>
               <div className="text-sm font-semibold text-white mt-0.5 flex items-center gap-2">
                 <span>
                   {isAccLive && frame
                     ? frame.track_name.toUpperCase()
-                    : "Waiting for Assetto Corsa Competizione"}
+                    : "Esperando sesión activa en Assetto Corsa Competizione"}
                 </span>
                 <span className="text-zinc-600">›</span>
               </div>
@@ -112,7 +112,7 @@ export function Navbar() {
             <div className="flex items-center gap-6 text-right font-mono">
               <div className="border-r border-zinc-800 pr-6">
                 <div className="text-[10px] text-zinc-500 uppercase tracking-wider">
-                  INPUT PROFILE
+                  PERIFÉRICO
                 </div>
                 <div className="text-xs text-white font-semibold mt-0.5">
                   {modeLabel}
@@ -130,19 +130,19 @@ export function Navbar() {
                         : "bg-[#E10600]"
                     }`}
                   />
-                  <span>AGENT LINK</span>
+                  <span>AGENTE LOCAL</span>
                   <span className="text-white font-semibold ml-1">
                     {isAccLive
-                      ? "333 HZ ACTIVE"
+                      ? "ACTIVO 333 HZ"
                       : agentConnected
-                      ? "STANDBY"
-                      : "OFFLINE"}
+                      ? "EN ESPERA"
+                      : "DESCONECTADO"}
                   </span>
                 </div>
                 <div className="text-[10px] text-zinc-500 uppercase tracking-wider mt-0.5">
-                  SHARED MEMORY{" "}
+                  MEMORIA COMPARTIDA{" "}
                   <span className="text-zinc-300 ml-1">
-                    {isAccLive ? "STREAMING" : "NO SIGNAL"}
+                    {isAccLive ? "RECIBIENDO DATOS" : "SIN SEÑAL"}
                   </span>
                 </div>
               </div>

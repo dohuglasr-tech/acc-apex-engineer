@@ -7,7 +7,15 @@ export default function DownloadPage() {
   const { profile, inputMode } = useTelemetry();
   const [copied, setCopied] = useState(false);
 
-  const tokenValue = profile?.agent_token || "SIGN IN TO GENERATE AGENT TOKEN";
+  const modeName =
+    inputMode === "keyboard"
+      ? "TECLADO"
+      : inputMode === "gamepad"
+      ? "MANDO"
+      : "VOLANTE";
+
+  const tokenValue =
+    profile?.agent_token || "INICIA SESIÓN PARA GENERAR TU TOKEN DE AGENTE";
 
   const handleCopyToken = () => {
     if (!profile?.agent_token) return;
@@ -21,7 +29,7 @@ export default function DownloadPage() {
       <div className="flex flex-wrap items-center justify-between gap-6 border-b border-zinc-800 pb-8">
         <div className="space-y-1.5 max-w-xl">
           <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-zinc-500">
-            WINDOWS 10 / 11 X64 // NATIVE TELEMETRY DAEMON
+            WINDOWS 10 / 11 X64 // MOTOR NATIVO DE TELEMETRÍA
           </div>
           <h1 className="text-xl font-semibold text-white">
             ACC_Apex_Engineer.exe
@@ -38,14 +46,14 @@ export default function DownloadPage() {
           download="ACC_Apex_Engineer.exe"
           className="px-7 py-2.5 rounded-full border border-zinc-500 hover:border-white text-xs font-medium text-white transition"
         >
-          Download Executable (.EXE)
+          Descargar Ejecutable (.EXE)
         </a>
       </div>
 
       <div className="space-y-3">
         <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
-          <span>PERSONAL AGENT LINK TOKEN</span>
-          <span>ACTIVE PROFILE: {(inputMode || "wheel").toUpperCase()}</span>
+          <span>TOKEN PERSONAL DE VINCULACIÓN</span>
+          <span>PERFIL ACTIVO: {modeName}</span>
         </div>
 
         <div className="flex items-center justify-between gap-4 border border-zinc-800 bg-[#08080A] px-4 py-3">
@@ -57,7 +65,7 @@ export default function DownloadPage() {
               onClick={handleCopyToken}
               className="px-4 py-1 rounded-full border border-zinc-700 hover:border-white text-[11px] font-mono text-zinc-300 hover:text-white transition shrink-0"
             >
-              {copied ? "COPIED" : "COPY TOKEN"}
+              {copied ? "COPIADO" : "COPIAR TOKEN"}
             </button>
           )}
         </div>
@@ -67,40 +75,40 @@ export default function DownloadPage() {
         <table className="w-full text-left border-collapse text-xs">
           <thead>
             <tr className="border-b border-zinc-800 text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
-              <th className="py-3 pr-4">SPEC.</th>
-              <th className="py-3 px-4">SUBSYSTEM</th>
-              <th className="py-3 pl-4">BEHAVIOR</th>
+              <th className="py-3 pr-4">ESPEC.</th>
+              <th className="py-3 px-4">SUBSISTEMA</th>
+              <th className="py-3 pl-4">COMPORTAMIENTO</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-900 font-mono text-zinc-400">
             <tr>
               <td className="py-4 pr-4 text-zinc-500">01</td>
               <td className="py-4 px-4 text-white font-sans font-medium">
-                Shared Memory Reader
+                Lector de Memoria Compartida
               </td>
               <td className="py-4 pl-4">
-                Read-only access to Local\acpmf_physics, acpmf_graphics,
-                acpmf_static at 333 Hz
+                Acceso de solo lectura a Local\acpmf_physics, acpmf_graphics y
+                acpmf_static a 333 Hz
               </td>
             </tr>
             <tr>
               <td className="py-4 pr-4 text-zinc-500">02</td>
               <td className="py-4 px-4 text-white font-sans font-medium">
-                Setup File Scope
+                Alcance de Archivos de Setup
               </td>
               <td className="py-4 pl-4">
-                Writes exclusively to Documents\Assetto Corsa
-                Competizione\Setups (Never touches controls.json)
+                Escribe exclusivamente en Documents\Assetto Corsa
+                Competizione\Setups (nunca toca controls.json)
               </td>
             </tr>
             <tr>
               <td className="py-4 pr-4 text-zinc-500">03</td>
               <td className="py-4 px-4 text-white font-sans font-medium">
-                Neural Pit Radio
+                Radio de Ingeniero con Voz Neuronal
               </td>
               <td className="py-4 pl-4">
-                es-ES-AlvaroNeural voice synthesis — active only during live
-                track sessions
+                Síntesis neuronal en español (es-ES-AlvaroNeural) — activa
+                únicamente durante sesiones reales en pista
               </td>
             </tr>
           </tbody>

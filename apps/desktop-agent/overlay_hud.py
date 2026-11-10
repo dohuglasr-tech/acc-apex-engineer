@@ -23,11 +23,11 @@ class OverlayHUD:
     def __init__(self, root: tk.Tk, input_mode: str = "wheel") -> None:
         self.root = root
         self.input_mode = input_mode
-        self.last_setup_label = "STANDBY"
+        self.last_setup_label = "EN ESPERA"
         self._visible = False
 
         self.win = tk.Toplevel(self.root)
-        self.win.title("ACC Apex Telemetry Overlay")
+        self.win.title("ACC Apex Telemetría HUD")
         self.win.overrideredirect(True)
         self.win.attributes("-topmost", True)
         self.win.attributes("-alpha", 0.90)
@@ -56,7 +56,6 @@ class OverlayHUD:
             pass
 
     def _build_widgets(self) -> None:
-        # Línea superior roja estilo F1 Broadcast
         top_bar = tk.Frame(self.win, bg="#E10600", height=3)
         top_bar.pack(fill="x")
 
@@ -65,16 +64,19 @@ class OverlayHUD:
 
         self.lbl_title = tk.Label(
             header_frame,
-            text="APEX TELEMETRY // 333 HZ",
+            text="APEX TELEMETRÍA // 333 HZ",
             fg="#FFFFFF",
             bg="#08080A",
             font=("Consolas", 9, "bold"),
         )
         self.lbl_title.pack(side="left")
 
+        mode_es = {"keyboard": "TECLADO", "gamepad": "MANDO", "wheel": "VOLANTE"}.get(
+            self.input_mode, "VOLANTE"
+        )
         self.lbl_mode = tk.Label(
             header_frame,
-            text=f"{self.input_mode.upper()}",
+            text=mode_es,
             fg="#E10600",
             bg="#08080A",
             font=("Consolas", 9, "bold"),
@@ -86,7 +88,7 @@ class OverlayHUD:
 
         self.lbl_speed_gear = tk.Label(
             main_frame,
-            text="000 KMH   G-N   0000 RPM",
+            text="000 KMH   M-N   0000 RPM",
             fg="#FFFFFF",
             bg="#111115",
             font=("Consolas", 13, "bold"),
@@ -95,7 +97,7 @@ class OverlayHUD:
 
         self.lbl_tyres = tk.Label(
             main_frame,
-            text="PSI  FL --.-  FR --.-  RL --.-  RR --.-",
+            text="PSI  DI --.-  DD --.-  TI --.-  TD --.-",
             fg="#A1A1AA",
             bg="#111115",
             font=("Consolas", 9),
@@ -113,7 +115,7 @@ class OverlayHUD:
 
         self.lbl_alert = tk.Label(
             self.win,
-            text="STATUS: WAITING FOR TRACK SESSION",
+            text="ESTADO: ESPERANDO SESIÓN EN PISTA",
             fg="#71717A",
             bg="#08080A",
             font=("Consolas", 8, "bold"),
@@ -147,21 +149,21 @@ class OverlayHUD:
 
         gear_str = "R" if sample.gear < 0 else ("N" if sample.gear == 0 else str(sample.gear))
         self.lbl_speed_gear.configure(
-            text=f"{sample.speed_kmh:03.0f} KMH   G-{gear_str}   {sample.rpms:04d} RPM"
+            text=f"{sample.speed_kmh:03.0f} KMH   M-{gear_str}   {sample.rpms:04d} RPM"
         )
 
         p = sample.tyre_pressures
         in_window = all(26.65 <= x <= 27.05 for x in p)
         psi_color = "#10B981" if in_window else "#F59E0B"
         self.lbl_tyres.configure(
-            text=f"PSI  FL {p[0]:.1f}  FR {p[1]:.1f}  RL {p[2]:.1f}  RR {p[3]:.1f}",
+            text=f"PSI  DI {p[0]:.1f}  DD {p[1]:.1f}  TI {p[2]:.1f}  TD {p[3]:.1f}",
             fg=psi_color,
         )
 
         if live_alert:
-            self.lbl_alert.configure(text=f"ALERT: {live_alert}", fg="#E10600")
+            self.lbl_alert.configure(text=f"AVISO: {live_alert}", fg="#E10600")
         else:
             self.lbl_alert.configure(
-                text=f"RH {sample.ride_height[0]:.0f}/{sample.ride_height[1]:.0f} MM  |  BIAS {sample.brake_bias:.1f}%",
+                text=f"ALTURA {sample.ride_height[0]:.0f}/{sample.ride_height[1]:.0f} MM  |  REPARTO {sample.brake_bias:.1f}%",
                 fg="#D4D4D8",
             )

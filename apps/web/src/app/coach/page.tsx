@@ -7,16 +7,23 @@ import { LapTelemetryChart } from "@/components/LapTelemetryChart";
 export default function CoachPage() {
   const { drivingErrors, inputMode, trace } = useTelemetry();
 
+  const modeName =
+    inputMode === "keyboard"
+      ? "TECLADO"
+      : inputMode === "gamepad"
+      ? "MANDO"
+      : "VOLANTE";
+
   if (!drivingErrors || drivingErrors.length === 0) {
     return (
       <div className="py-16 border-t border-b border-zinc-900 text-center space-y-3">
         <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-zinc-500">
-          NO CORNER DIAGNOSTICS RECORDED
+          SIN DIAGNÓSTICOS DE CURVA REGISTRADOS
         </div>
         <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
           Completa una vuelta en Assetto Corsa Competizione para generar el
           análisis curva a curva de frenada, dirección y tracción adaptado a tu
-          periférico ({(inputMode || "wheel").toUpperCase()}).
+          periférico ({modeName}).
         </p>
       </div>
     );
@@ -29,11 +36,11 @@ export default function CoachPage() {
           <thead>
             <tr className="border-b border-zinc-800 text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-500">
               <th className="py-3 pr-4">POS.</th>
-              <th className="py-3 px-4">CORNER / SECTOR</th>
-              <th className="py-3 px-4">DETECTED EVENT</th>
-              <th className="py-3 px-4">TELEMETRY METRIC</th>
-              <th className="py-3 px-4">TIME LOSS</th>
-              <th className="py-3 pl-4">DRIVER & SETUP CORRECTION</th>
+              <th className="py-3 px-4">CURVA / SECTOR</th>
+              <th className="py-3 px-4">EVENTO DETECTADO</th>
+              <th className="py-3 px-4">MÉTRICA DE TELEMETRÍA</th>
+              <th className="py-3 px-4">TIEMPO PERDIDO</th>
+              <th className="py-3 pl-4">CORRECCIÓN DE PILOTAJE Y SETUP</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-900 text-xs">
