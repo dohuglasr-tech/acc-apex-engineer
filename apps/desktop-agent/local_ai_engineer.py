@@ -101,8 +101,7 @@ class LocalAIEngineer:
         # Saludo de inicio de sesión por radio
         if not self._greeted_session and sample.speed_kmh > 45.0:
             self._greeted_session = True
-            t_name = self.track_knowledge.display_name if self.track_knowledge else "pista"
-            greeting = f"¡Radio comprobada! Hola compañero, soy Álvaro, tu ingeniero de pista en {t_name}. Estoy monitoreando tu telemetría a 333 hercios. Te iré cantando las referencias de frenada y curvas con tiempo. ¡Vamos a hacer una gran sesión!"
+            greeting = "¡Radio comprobada! Hola compañero, soy Álvaro, tu ingeniero de pista. Todo listo, te cantaré las curvas con tiempo. ¡Vamos con todo!"
             self._broadcast_radio(greeting, "praise")
             self.last_speech_ts = now + 1.5
 
@@ -214,18 +213,18 @@ class LocalAIEngineer:
                 category = "coaching"
 
                 if score >= 90:
-                    tip_text = c.coaching_tips.get("praise") or f"¡Gran paso por {c.name}! Vértice perfecto y tracción limpia."
+                    tip_text = c.coaching_tips.get("praise") or f"¡Gran curva en {c.name}! Vértice perfecto y tracción limpia."
                     category = "praise"
                 elif self.in_corner_scrub_frames > 20:
-                    tip_text = c.coaching_tips.get("scrub") or f"En {c.name}, cuida el ángulo de dirección en el vértice para no sobrecalentar gomas."
+                    tip_text = c.coaching_tips.get("scrub") or f"En {c.name}, gira menos el volante en el vértice para cuidar las ruedas."
                 elif not self.in_corner_had_trail and c.braking_type in ("hard", "trail"):
-                    tip_text = c.coaching_tips.get("trail") or f"En {c.name}, suelta el freno más progresivo hacia el vértice para ayudar a rotar el coche."
+                    tip_text = c.coaching_tips.get("trail") or f"En {c.name}, suelta el freno más despacio hacia el vértice para meter el coche."
                 elif speed_delta < -10.0:
-                    tip_text = c.coaching_tips.get("early_brake") or f"Frenaste un poco pronto en {c.name}, podemos ganar dos décimas frenando al {c.braking_marker}."
+                    tip_text = c.coaching_tips.get("early_brake") or f"Frenaste un poco pronto en {c.name}, podemos apurar diez metros más al cartel."
                 elif self.in_corner_tc_cuts > 12:
-                    tip_text = c.coaching_tips.get("traction") or f"Paciencia con el gas a la salida de {c.name}, espera a enderezar antes de pisar a fondo."
+                    tip_text = c.coaching_tips.get("traction") or f"Paciencia con el gas al salir de {c.name}, espera a enderezar el volante."
                 else:
-                    tip_text = f"Buen paso por {c.name}. Mantén ese ritmo constante."
+                    tip_text = f"Buen paso por {c.name}. Mantén ese ritmo."
 
                 self.last_corner_result = {
                     "corner_id": c.id,
