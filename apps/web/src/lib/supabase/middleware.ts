@@ -2,7 +2,9 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isSupabaseConfigured } from "./client";
 
-const PROTECTED_PATHS = ["/dashboard", "/coach", "/setups", "/onboarding", "/download"];
+// Permitimos acceso público directo a la telemetría, dashboard, diagnósticos y setups
+// para que cualquier amigo o espectador con el enlace pueda entrar directamente sin requerir login.
+const PROTECTED_PATHS: string[] = [];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({

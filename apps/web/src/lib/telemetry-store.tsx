@@ -247,6 +247,7 @@ export interface EngineerState {
 }
 
 interface TelemetryContextValue {
+  isAuthenticated: boolean;
   profile: UserProfile | null;
   inputMode: InputMode | null;
   setInputMode: (mode: InputMode, wheelType?: string) => Promise<void>;
@@ -270,6 +271,7 @@ interface TelemetryContextValue {
 const TelemetryContext = createContext<TelemetryContextValue | null>(null);
 
 export function TelemetryProvider({ children }: { children: React.ReactNode }) {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [inputMode, setInputModeState] = useState<InputMode | null>("gamepad");
   const [voiceMode, setVoiceModeState] = useState<VoiceMode>("companion");
@@ -289,12 +291,29 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
   const wsActiveRef = useRef(false);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => {
+      setIsAuthenticated(Boolean(data?.user));
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(Boolean(session?.user));
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   const fetchCloudState = useCallback(async () => {
     if (!isSupabaseConfigured()) return;
     try {
       const supabase = createClient();
       const { data: authData } = await supabase.auth.getUser();
       const userId = authData?.user?.id || null;
+      setIsAuthenticated(Boolean(userId));
 
       const { data: state } = await supabase.rpc("get_active_telemetry_state", {
         p_user_id: userId,
@@ -357,8 +376,17 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
           }
         } else {
           setIsAccLive(false);
-          setFrame(null);
-          setEngineerState(null);
+          // Conservamos el último sample de telemetría para que un amigo o espectador
+          // pueda ver la telemetría, presiones y setup de la última sesión sin pantalla en blanco
+          if (prof.live_telemetry?.sample) {
+            setFrame(prof.live_telemetry.sample as TelemetryFrame);
+          }
+          if (prof.live_telemetry?.active_setup) {
+            setActiveSetup(prof.live_telemetry.active_setup as ActiveAccSetup);
+          }
+          if (prof.live_telemetry?.engineer_state) {
+            setEngineerState(prof.live_telemetry.engineer_state as EngineerState);
+          }
           setLiveAlert(null);
         }
       }
@@ -630,6 +658,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   return (
     <TelemetryContext.Provider
       value={{
+        isAuthenticated,
         profile,
         inputMode,
         setInputMode,

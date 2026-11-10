@@ -54,7 +54,8 @@ export default function DashboardPage() {
       ? "PRINCIPIANTE"
       : "SEGURO / CONSISTENTE";
 
-  if (!isAccLive || !frame) {
+  // Si aún no hay ninguna telemetría registrada en la base de datos ni en vivo, mostramos la guía de inicio
+  if (!frame) {
     return (
       <div className="space-y-10">
         {/* Encabezado de la Guía Paso a Paso */}
@@ -361,6 +362,27 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-10">
+      {!isAccLive && (
+        <div className="border border-amber-500/40 bg-amber-500/10 rounded-lg px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-amber-200">
+          <div className="flex items-center gap-2.5 text-xs">
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+            <span className="font-semibold uppercase tracking-wider font-mono text-amber-300">
+              SESIÓN EN ESPERA // COCHE EN BOXES
+            </span>
+            <span className="text-zinc-400 text-[11px]">
+              Mostrando telemetría y setup guardado de {profile?.discord_username || "Piloto"}. Sincroniza en tiempo real a 333 Hz al entrar a pista.
+            </span>
+          </div>
+          <a
+            href="/downloads/ACC_Apex_Engineer.exe"
+            download="ACC_Apex_Engineer.exe"
+            className="text-[11px] font-mono text-zinc-300 hover:text-white underline"
+          >
+            Descargar Agente PC (.EXE)
+          </a>
+        </div>
+      )}
+
       {/* Cabecera de tiempos de sesión en vivo */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 border-b border-zinc-800 pb-6 tabular-nums">
         <div>

@@ -7,8 +7,15 @@ import { useTelemetry } from "@/lib/telemetry-store";
 
 export function Navbar() {
   const pathname = usePathname();
-  const { profile, inputMode, voiceMode, agentConnected, isAccLive, frame } =
-    useTelemetry();
+  const {
+    isAuthenticated,
+    profile,
+    inputMode,
+    voiceMode,
+    agentConnected,
+    isAccLive,
+    frame,
+  } = useTelemetry();
 
   const navItems = [
     { href: "/dashboard", label: "Telemetría" },
@@ -69,10 +76,10 @@ export function Navbar() {
           </div>
 
           <div className="flex items-center gap-5">
-            {profile ? (
+            {isAuthenticated ? (
               <div className="flex items-center gap-4">
                 <span className="text-xs text-zinc-300 font-medium">
-                  {profile.discord_username}
+                  {profile?.discord_username || "Piloto"}
                 </span>
                 <form action="/auth/signout" method="post">
                   <button
@@ -84,12 +91,20 @@ export function Navbar() {
                 </form>
               </div>
             ) : (
-              <Link
-                href="/login"
-                className="text-xs font-medium text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-400 rounded-full px-4 py-1.5 transition"
-              >
-                Iniciar sesión
-              </Link>
+              <div className="flex items-center gap-3">
+                {profile && (
+                  <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono text-zinc-400 border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 rounded">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Viendo a: <strong className="text-zinc-200">{profile.discord_username}</strong>
+                  </span>
+                )}
+                <Link
+                  href="/login"
+                  className="text-xs font-medium text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-400 rounded-full px-4 py-1.5 transition"
+                >
+                  Acceso Piloto
+                </Link>
+              </div>
             )}
           </div>
         </div>
