@@ -125,8 +125,10 @@ class VoiceEngineer:
     Frases concisas, humanas y comprensibles al instante durante la carrera.
     """
 
-    def __init__(self, enabled: bool = True) -> None:
+    def __init__(self, enabled: bool = True, voice_name: str = "es-ES-AlvaroNeural") -> None:
         self.enabled = enabled
+        self.voice_name = voice_name
+        self.speech_rate = "+22%"  # Cadencia enérgica, rápida y profesional de radio F1 (elimina lentitud y monotonía)
         self._queue: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=10)
         self.is_speaking = False
         self.last_spoken_text = ""
@@ -145,6 +147,11 @@ class VoiceEngineer:
             target=self._worker, daemon=True, name="VoiceEngineerThread"
         )
         self._thread.start()
+
+    def set_voice(self, voice_name: str) -> None:
+        """Permite cambiar la voz de radio (es-ES-AlvaroNeural, es-MX-JorgeNeural, es-ES-ElviraNeural)."""
+        if voice_name:
+            self.voice_name = voice_name
 
     def _detect_sapi_spanish_voice(self) -> None:
         """Verifica si Windows tiene una voz en español instalada. Si solo tiene inglés, la descarta."""
@@ -215,15 +222,14 @@ class VoiceEngineer:
         self.speak(msg)
 
     async def _synthesize_edge_neural(self, text: str, out_path: Path) -> bool:
-        """Síntesis con Microsoft Edge Neural TTS en español fluido y natural."""
+        """Síntesis con Microsoft Edge Neural TTS en español fluido, rápido y natural."""
         if edge_tts is None:
             return False
         try:
-            # es-ES-AlvaroNeural con parámetros naturales (+0% de velocidad y tono estándar)
             communicate = edge_tts.Communicate(
                 text=text,
-                voice="es-ES-AlvaroNeural",
-                rate="+0%",
+                voice=self.voice_name,
+                rate=self.speech_rate,
                 pitch="+0Hz",
             )
             await asyncio.wait_for(communicate.save(str(out_path)), timeout=4.5)
@@ -243,8 +249,9 @@ class VoiceEngineer:
             return False
 
     def _get_cache_path(self, text: str) -> Path:
-        """Devuelve una ruta en caché basada en el hash del texto para reproducción instantánea."""
-        h = hashlib.md5(text.strip().encode("utf-8")).hexdigest()
+        """Devuelve una ruta en caché basada en el hash del texto, voz y cadencia."""
+        cache_key = f"{self.voice_name}_{self.speech_rate}_{text.strip()}"
+        h = hashlib.md5(cache_key.encode("utf-8")).hexdigest()
         return self.cache_dir / f"voice_{h}.mp3"
 
     def _worker(self) -> None:

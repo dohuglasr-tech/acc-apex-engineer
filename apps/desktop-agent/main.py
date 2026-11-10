@@ -4,21 +4,38 @@ ACC Apex Engineer Pro - Orquestador Principal del Agente Ejecutable Local (main.
   - Puente híbrido: WebSocket local 60 FPS + Sincronización Cloud en vivo cada 1.2s vía Supabase
     (garantiza que la web en https://*.vercel.app reciba telemetría en vivo sin bloqueos HTTPS)
   - Auto-Inyector de Setups en tiempo real en Documents\\Assetto Corsa Competizione\\Setups
+  - Cerebro de IA con Google Gemini y síntesis por voz neural de alta velocidad
+  - Mutex de instancia única: impide que dos procesos hablen a la vez
 """
 
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import json
+import os
+import sys
 import threading
 import time
 import tkinter as tk
 from typing import Any, Callable, Dict, List, Optional, Set
 
+# Mutex único para evitar que dos instancias del agente se ejecuten simultáneamente
+# y hablen con dos voces al mismo tiempo.
+ERROR_ALREADY_EXISTS = 183
+_SINGLE_INSTANCE_MUTEX = ctypes.windll.kernel32.CreateMutexW(
+    None, False, "ACC_Apex_Engineer_SingleInstance_Mutex_v2"
+)
+if ctypes.windll.kernel32.GetLastError() == ERROR_ALREADY_EXISTS:
+    # Ya hay otra instancia de ACC Apex Engineer ejecutándose.
+    # Salimos inmediatamente para no sobreponer voces ni duplicar procesos.
+    sys.exit(0)
+
 import requests
 import websockets
 
 from auto_setup_injector import AutoSetupInjector
+from gemini_race_engineer import GeminiRaceEngineer
 from local_ai_engineer import LocalAIEngineer
 from overlay_hud import OverlayHUD
 from shm_reader import ACCSharedMemoryReader, TelemetrySample
@@ -214,7 +231,13 @@ class ApexDesktopAgentApp:
         self.analyzer = TelemetryLapAnalyzer(input_mode=initial_mode)
         self.injector = AutoSetupInjector(input_mode=initial_mode)
         self.voice = VoiceEngineer(enabled=bool(self.config.get("voice_enabled", True)))
-        self.ai_engineer = LocalAIEngineer(voice_engine=self.voice, input_mode=initial_mode)
+        gemini_key = self.config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
+        self.gemini = GeminiRaceEngineer(api_key=gemini_key)
+        self.ai_engineer = LocalAIEngineer(
+            voice_engine=self.voice,
+            input_mode=initial_mode,
+            gemini_engine=self.gemini,
+        )
         initial_voice = self.config.get("voice_mode") or "companion"
         self.ai_engineer.set_voice_mode(initial_voice)
         self.cloud_sync = SupabaseCloudSync(self.config)
@@ -260,6 +283,8 @@ class ApexDesktopAgentApp:
         if updated_cfg.get("voice_mode"):
             self.ai_engineer.set_voice_mode(updated_cfg["voice_mode"])
             self.hud.set_voice_mode(updated_cfg["voice_mode"])
+        if updated_cfg.get("gemini_api_key") is not None:
+            self.gemini.set_api_key(updated_cfg["gemini_api_key"])
         self.voice.enabled = bool(updated_cfg.get("voice_enabled", True))
         self.cloud_sync.update_config(updated_cfg)
 
@@ -344,13 +369,33 @@ class ApexDesktopAgentApp:
             self.voice.speak(lap_msg)
         elif self.ai_engineer.voice_mode == "companion":
             primary_err = lap.driving_errors[0]["type"] if lap.driving_errors else None
-            self.voice.announce_lap_and_setup(
-                lap_number=lap.lap_number,
-                lap_time_ms=lap.lap_time_ms,
-                version_num=version_num,
-                primary_error=primary_err,
-                input_mode=lap.input_mode,
-            )
+            # Si Google Gemini está activo, genera el informe de vuelta con IA avanzada
+            if self.gemini and self.gemini.is_available:
+                lap_sec = round(lap.lap_time_ms / 1000.0, 3)
+                mins = int(lap_sec // 60)
+                secs = int(lap_sec % 60)
+                tenths = int(round((lap_sec - int(lap_sec)) * 10))
+                time_str = f"{mins}:{secs:02d}.{tenths}"
+                ctx = {
+                    "track_name": lap.track_name,
+                    "car_model": lap.car_model,
+                    "lap_time_str": time_str,
+                    "setup_version": version_num,
+                    "primary_error": primary_err or "trazada constante",
+                }
+
+                def _on_gemini_lap(g_text: str, g_cat: str) -> None:
+                    self.ai_engineer._broadcast_radio(g_text, g_cat)
+
+                self.gemini.generate_radio_advice_async("lap_summary", ctx, _on_gemini_lap)
+            else:
+                self.voice.announce_lap_and_setup(
+                    lap_number=lap.lap_number,
+                    lap_time_ms=lap.lap_time_ms,
+                    version_num=version_num,
+                    primary_error=primary_err,
+                    input_mode=lap.input_mode,
+                )
         self.cloud_sync.sync_lap_and_setup_async(
             lap=lap,
             setup_file_name=live_path.name,

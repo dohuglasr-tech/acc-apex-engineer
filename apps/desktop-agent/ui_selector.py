@@ -44,6 +44,8 @@ def load_agent_config() -> Dict[str, Any]:
                 cfg["agent_token"] = DEFAULT_AGENT_TOKEN
             if not cfg.get("input_mode"):
                 cfg["input_mode"] = "gamepad"
+            if "gemini_api_key" not in cfg:
+                cfg["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
             return cfg
         except Exception:
             pass
@@ -54,6 +56,7 @@ def load_agent_config() -> Dict[str, Any]:
         "supabase_url": DEFAULT_SUPABASE_URL,
         "supabase_anon_key": DEFAULT_SUPABASE_ANON_KEY,
         "voice_enabled": True,
+        "gemini_api_key": os.environ.get("GEMINI_API_KEY", ""),
     }
 
 
@@ -93,7 +96,7 @@ class InputModeSelectorWindow:
         self.linked_username: str = ""
 
         self.root.title("ACC APEX ENGINEER // AGENTE DE TELEMETRÍA")
-        self.root.geometry("640x690")
+        self.root.geometry("640x740")
         self.root.configure(bg="#08080A")
         self.root.resizable(False, False)
 
@@ -103,6 +106,9 @@ class InputModeSelectorWindow:
             value=config.get("agent_token") or DEFAULT_AGENT_TOKEN
         )
         self.voice_var = tk.BooleanVar(value=bool(config.get("voice_enabled", True)))
+        self.gemini_key_var = tk.StringVar(
+            value=config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
+        )
 
         self._build_ui()
 
@@ -282,6 +288,48 @@ class InputModeSelectorWindow:
             font=("Segoe UI", 9),
         ).pack(anchor="w")
 
+        # SECCIÓN 3: GOOGLE GEMINI AI
+        step3 = tk.Frame(self.root, bg="#08080A", padx=20, pady=4)
+        step3.pack(fill="x")
+
+        gemini_hdr = tk.Frame(step3, bg="#08080A")
+        gemini_hdr.pack(fill="x")
+
+        tk.Label(
+            gemini_hdr,
+            text="03 / CEREBRO DE IA GOOGLE GEMINI",
+            fg="#E10600",
+            bg="#08080A",
+            font=("Consolas", 9, "bold"),
+        ).pack(side="left")
+
+        tk.Label(
+            gemini_hdr,
+            text="(COACHING INTELIGENTE Y CONSEJOS EN VIVO)",
+            fg="#71717A",
+            bg="#08080A",
+            font=("Consolas", 8),
+        ).pack(side="left", padx=6)
+
+        tk.Entry(
+            step3,
+            textvariable=self.gemini_key_var,
+            bg="#121217",
+            fg="#FFFFFF",
+            insertbackground="#FFFFFF",
+            relief="flat",
+            font=("Consolas", 9),
+            show="*",
+        ).pack(fill="x", ipady=4, pady=(2, 2))
+
+        tk.Label(
+            step3,
+            text="Pega tu GEMINI_API_KEY para análisis con IA de Google (o déjalo en blanco para motor analítico local).",
+            fg="#71717A",
+            bg="#08080A",
+            font=("Segoe UI", 8),
+        ).pack(anchor="w")
+
         btn_frame = tk.Frame(self.root, bg="#08080A", padx=20, pady=10)
         btn_frame.pack(fill="x")
 
@@ -381,5 +429,6 @@ class InputModeSelectorWindow:
             self.token_var.get().strip() or DEFAULT_AGENT_TOKEN
         )
         self.config["voice_enabled"] = bool(self.voice_var.get())
+        self.config["gemini_api_key"] = self.gemini_key_var.get().strip()
         save_agent_config(self.config)
         self.on_config_applied(self.config)

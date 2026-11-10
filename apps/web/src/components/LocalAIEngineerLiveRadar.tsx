@@ -185,10 +185,12 @@ export function LocalAIEngineerLiveRadar() {
 
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-white">
-              {eng.engineer_name || "ÁLVARO // INGENIERO DE PISTA IA LOCAL"}
+              {eng.engineer_name || "ÁLVARO // INGENIERO DE PISTA IA"}
             </span>
             <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-zinc-800/80 text-zinc-300 border border-zinc-700/60 uppercase">
-              100% LOCAL · 333 HZ
+              {Boolean((eng as any)?.gemini_active)
+                ? "GOOGLE GEMINI 2.0"
+                : "VOZ NEURAL RÁPIDA · 333 HZ"}
             </span>
           </div>
         </div>

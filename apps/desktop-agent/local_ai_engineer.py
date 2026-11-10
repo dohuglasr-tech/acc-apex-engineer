@@ -39,8 +39,14 @@ class LocalAIEngineer:
     Cálculo de trayectorias en tiempo real, anticipación por radio y telemetría de curvas.
     """
 
-    def __init__(self, voice_engine: Optional[Any] = None, input_mode: str = "gamepad") -> None:
+    def __init__(
+        self,
+        voice_engine: Optional[Any] = None,
+        input_mode: str = "gamepad",
+        gemini_engine: Optional[Any] = None,
+    ) -> None:
         self.voice = voice_engine
+        self.gemini = gemini_engine
         self.input_mode = input_mode if input_mode in ("keyboard", "gamepad", "wheel") else "gamepad"
         self.voice_mode: str = "companion"  # "companion", "car_state", "telemetry"
         self.current_track_name: str = ""
@@ -265,7 +271,31 @@ class LocalAIEngineer:
                     and (score < 85 or (score >= 95 and (sample.completed_laps % 2 == 0)))
                 ):
                     self.last_speech_ts = now
-                    self._broadcast_radio(tip_text, category)
+                    # Si Google Gemini está activo, generar consejo inteligente y adaptativo
+                    if self.gemini and self.gemini.is_available:
+                        ctx = {
+                            "track_name": self.track_knowledge.display_name if self.track_knowledge else sample.track_name,
+                            "car_model": sample.car_model,
+                            "corner_name": c.name,
+                            "score": score,
+                            "speed_delta": speed_delta,
+                            "primary_error": (
+                                "frenada sin trail-braking"
+                                if not self.in_corner_had_trail
+                                else "fricción excesiva de dirección"
+                                if self.in_corner_scrub_frames > 15
+                                else "corte de tracción por pisar pronto"
+                                if self.in_corner_tc_cuts > 10
+                                else ""
+                            ),
+                        }
+
+                        def _on_gemini_tip(g_text: str, g_cat: str) -> None:
+                            self._broadcast_radio(g_text, g_cat)
+
+                        self.gemini.generate_radio_advice_async("corner_exit", ctx, _on_gemini_tip)
+                    else:
+                        self._broadcast_radio(tip_text, category)
 
                 self.active_corner = None
 
@@ -373,8 +403,11 @@ class LocalAIEngineer:
                 "total_corners": len(self.track_knowledge.corners),
             }
 
+        gemini_ready = bool(self.gemini and self.gemini.is_available)
         return {
             "engineer_name": "Álvaro (Ingeniero de Pista IA)",
+            "ai_model": "Google Gemini 2.0 Flash" if gemini_ready else "Motor Analítico Local (333 Hz)",
+            "gemini_active": gemini_ready,
             "voice_mode": self.voice_mode,
             "status": "transmitting" if is_transmitting else "monitoring",
             "upcoming_corner": self.upcoming_corner_data,
