@@ -149,7 +149,7 @@ class LocalAIEngineer:
                 best_corner = corner
 
         # 2. ACTUALIZAR RADAR DE PRÓXIMA CURVA
-        if best_corner and min_dist_m <= 450.0:
+        if best_corner and min_dist_m <= 600.0:
             self.upcoming_corner_data = {
                 "id": best_corner.id,
                 "name": best_corner.name,
@@ -167,20 +167,38 @@ class LocalAIEngineer:
             self.upcoming_corner_data = None
 
         # 3. DETECTAR SI DEBEMOS TRANSMITIR LA ANTICIPACIÓN POR RADIO
-        # Ventana de disparo: entre 130m y 220m (o 2.8s a 4.5s antes del frenado)
-        # Solo en modo "companion" (Acompañante)
+        # Ventana de disparo predictiva: entre 260m y 460m (o 4.0s a 7.2s antes de la curva)
+        # Permite que la radio hable y termine ANTES de llegar al cartel de 100/150m de frenada.
         if (
             self.voice_mode == "companion"
             and best_corner
-            and (110.0 <= min_dist_m <= 220.0 or 2.6 <= min_seconds <= 4.2)
+            and (260.0 <= min_dist_m <= 460.0 or 4.0 <= min_seconds <= 7.2)
         ):
             corner_key = f"{best_corner.id}_{sample.completed_laps}"
             if self.last_spoken_corner_id != corner_key and (now - self.last_speech_ts) >= 4.0:
                 self.last_spoken_corner_id = corner_key
                 self.last_speech_ts = now
 
-                advice = best_corner.anticipation_advice.format(dist=int(min_dist_m))
-                self._broadcast_radio(advice, "anticipation")
+                default_advice = best_corner.anticipation_advice.format(dist=int(min_dist_m))
+                if self.gemini and self.gemini.is_available:
+                    ctx = {
+                        "track_name": self.track_knowledge.display_name if self.track_knowledge else sample.track_name,
+                        "car_model": sample.car_model,
+                        "corner_name": best_corner.name,
+                        "distance_m": int(min_dist_m),
+                        "speed_kmh": sample.speed_kmh,
+                        "gear": best_corner.gear,
+                        "braking_marker": best_corner.braking_marker,
+                    }
+
+                    def _on_gemini_anticipate(g_text: str, g_cat: str) -> None:
+                        # Si aún estamos aproximándonos a esa curva
+                        if self.upcoming_corner_data and self.upcoming_corner_data.get("id") == best_corner.id:
+                            self._broadcast_radio(g_text, g_cat)
+
+                    self.gemini.generate_radio_advice_async("anticipation", ctx, _on_gemini_anticipate)
+                else:
+                    self._broadcast_radio(default_advice, "anticipation")
 
         # 4. EVALUACIÓN DENTRO DE LA CURVA
         for corner in self.track_knowledge.corners:
@@ -194,8 +212,10 @@ class LocalAIEngineer:
 
             if is_inside:
                 if self.active_corner != corner:
-                    # Entramos a una nueva curva
+                    # Entramos a una nueva curva -> purgar mensajes viejos para no emitir avisos desfasados
                     self.active_corner = corner
+                    if self.voice:
+                        self.voice.purge_pending()
                     self.in_corner_min_speed = sample.speed_kmh
                     self.in_corner_max_brake = sample.brake
                     self.in_corner_scrub_frames = 0
@@ -404,9 +424,10 @@ class LocalAIEngineer:
             }
 
         gemini_ready = bool(self.gemini and self.gemini.is_available)
+        model_display = f"Google Gemini 3.5 Flash ({self.gemini.last_model_used})" if (gemini_ready and self.gemini) else "Motor Analítico Local (333 Hz)"
         return {
             "engineer_name": "Álvaro (Ingeniero de Pista IA)",
-            "ai_model": "Google Gemini 2.0 Flash" if gemini_ready else "Motor Analítico Local (333 Hz)",
+            "ai_model": model_display,
             "gemini_active": gemini_ready,
             "voice_mode": self.voice_mode,
             "status": "transmitting" if is_transmitting else "monitoring",

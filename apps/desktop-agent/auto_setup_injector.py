@@ -218,7 +218,7 @@ def create_base_acc_setup(
                 "frontBrakePadCompound": brake_pad_compound,
                 "rearBrakePadCompound": brake_pad_compound,
                 "pitStrategy": [],
-                "fuelPerLap": 3.10,
+                "fuelPerLap": 4.10 if "spa" in (track_name or "").lower() else 3.20,
             },
         },
         "advancedSetup": {

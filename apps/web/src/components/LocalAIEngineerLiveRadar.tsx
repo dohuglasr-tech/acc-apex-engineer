@@ -189,7 +189,7 @@ export function LocalAIEngineerLiveRadar() {
             </span>
             <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-zinc-800/80 text-zinc-300 border border-zinc-700/60 uppercase">
               {Boolean((eng as any)?.gemini_active)
-                ? "GOOGLE GEMINI 2.0"
+                ? "GOOGLE GEMINI 3.5 FLASH"
                 : "VOZ NEURAL RÁPIDA · 333 HZ"}
             </span>
           </div>

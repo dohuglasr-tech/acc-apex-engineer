@@ -29,6 +29,7 @@ DEFAULT_SUPABASE_ANON_KEY = (
     "pccwkvHf1YLH5yPu8xn_WS5iLK9ZHZulfT87BX_KJuY"
 )
 DEFAULT_AGENT_TOKEN = "6be5b7f2-a67b-47f6-be2c-7a5297d04abd"
+DEFAULT_GEMINI_KEY = ""
 WEB_DASHBOARD_URL = "https://acc-apex-engineer-dg-aa6f.vercel.app/dashboard"
 
 
@@ -46,8 +47,8 @@ def load_agent_config() -> Dict[str, Any]:
                 cfg["input_mode"] = "gamepad"
             if not cfg.get("driving_style"):
                 cfg["driving_style"] = "safe"
-            if "gemini_api_key" not in cfg:
-                cfg["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
+            if not cfg.get("gemini_api_key"):
+                cfg["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", DEFAULT_GEMINI_KEY)
             return cfg
         except Exception:
             pass
@@ -59,7 +60,7 @@ def load_agent_config() -> Dict[str, Any]:
         "supabase_url": DEFAULT_SUPABASE_URL,
         "supabase_anon_key": DEFAULT_SUPABASE_ANON_KEY,
         "voice_enabled": True,
-        "gemini_api_key": os.environ.get("GEMINI_API_KEY", ""),
+        "gemini_api_key": os.environ.get("GEMINI_API_KEY", DEFAULT_GEMINI_KEY),
     }
 
 
@@ -92,10 +93,12 @@ class InputModeSelectorWindow:
         root: tk.Tk,
         config: Dict[str, Any],
         on_config_applied: Callable[[Dict[str, Any]], None],
+        on_test_gemini: Optional[Callable[[], Tuple[bool, str]]] = None,
     ) -> None:
         self.root = root
         self.config = config
         self.on_config_applied = on_config_applied
+        self.on_test_gemini = on_test_gemini
         self.linked_username: str = ""
 
         self.root.title("ACC APEX ENGINEER // AGENTE DE TELEMETRÍA")
@@ -381,6 +384,34 @@ class InputModeSelectorWindow:
             show="*",
         ).pack(fill="x", ipady=4, pady=(2, 2))
 
+        gemini_test_row = tk.Frame(step3, bg="#08080A")
+        gemini_test_row.pack(fill="x", pady=(4, 2))
+
+        self.btn_test_gemini = tk.Button(
+            gemini_test_row,
+            text="PROBAR RADIO GEMINI",
+            command=self._handle_test_gemini,
+            bg="#27272A",
+            fg="#FFFFFF",
+            activebackground="#10B981",
+            activeforeground="#FFFFFF",
+            font=("Segoe UI", 8, "bold"),
+            padx=10,
+            pady=3,
+            relief="flat",
+            cursor="hand2",
+        )
+        self.btn_test_gemini.pack(side="left")
+
+        self.lbl_gemini_status = tk.Label(
+            gemini_test_row,
+            text="● GOOGLE GEMINI 3.5 FLASH ACTIVO" if self.gemini_key_var.get().strip() else "○ MOTOR ANALÍTICO LOCAL (SIN CLAVE)",
+            fg="#10B981" if self.gemini_key_var.get().strip() else "#71717A",
+            bg="#08080A",
+            font=("Consolas", 8, "bold"),
+        )
+        self.lbl_gemini_status.pack(side="left", padx=10)
+
         tk.Label(
             step3,
             text="Pega tu GEMINI_API_KEY para análisis con IA de Google (o déjalo en blanco para motor analítico local).",
@@ -417,6 +448,31 @@ class InputModeSelectorWindow:
             font=("Consolas", 8),
         )
         self.lbl_status.pack(anchor="w", padx=20, pady=(2, 4))
+
+    def _handle_test_gemini(self) -> None:
+        if not self.on_test_gemini:
+            return
+
+        self.btn_test_gemini.configure(text="CONECTANDO A GEMINI...", bg="#52525B")
+        self.lbl_gemini_status.configure(text="Conectando con Google GenAI...", fg="#F59E0B")
+        self.root.update_idletasks()
+
+        def _bg_test() -> None:
+            ok, msg = self.on_test_gemini()
+            def _update() -> None:
+                self.btn_test_gemini.configure(text="PROBAR RADIO GEMINI", bg="#27272A")
+                if ok:
+                    self.lbl_gemini_status.configure(
+                        text="● GEMINI 3.5 FLASH CONECTADO Y TRANSMITIENDO", fg="#10B981"
+                    )
+                else:
+                    self.lbl_gemini_status.configure(
+                        text=f"✖ {msg[:45]}", fg="#EF4444"
+                    )
+            self.root.after(0, _update)
+
+        import threading
+        threading.Thread(target=_bg_test, daemon=True).start()
 
     def set_sync_feedback(
         self, success: bool, message: str, username: str = "", mode: str = ""

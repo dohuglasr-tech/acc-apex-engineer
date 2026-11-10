@@ -256,6 +256,7 @@ class ApexDesktopAgentApp:
             root=self.root,
             config=self.config,
             on_config_applied=self._on_config_applied,
+            on_test_gemini=self._on_test_gemini,
         )
         self.hud = OverlayHUD(self.root, input_mode=initial_mode)
         self.hud.set_voice_mode(initial_voice)
@@ -274,6 +275,15 @@ class ApexDesktopAgentApp:
         self._on_config_applied(self.config)
 
         self.root.after(50, self._refresh_hud_loop)
+
+    def _on_test_gemini(self) -> Tuple[bool, str]:
+        key = self.selector_ui.gemini_key_var.get().strip() or self.config.get("gemini_api_key", "")
+        if key:
+            self.gemini.set_api_key(key)
+        ok, msg = self.gemini.test_connection()
+        if ok and self.voice:
+            self.voice.speak(f"Radio comprobada: {msg}", priority=True)
+        return ok, msg
 
     def _on_config_applied(self, updated_cfg: Dict[str, Any]) -> None:
         mode = updated_cfg.get("input_mode") or "gamepad"

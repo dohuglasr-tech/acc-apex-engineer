@@ -143,6 +143,14 @@ class VoiceEngineer:
         if voice_name:
             self.voice_name = voice_name
 
+    def purge_pending(self) -> None:
+        """Descarta de inmediato mensajes encolados para no emitir avisos desfasados de curvas pasadas."""
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except Exception:
+                break
+
     def speak(self, message: str, priority: bool = False) -> None:
         if not self.enabled or not message or not message.strip():
             return
@@ -153,11 +161,7 @@ class VoiceEngineer:
 
         # Limpiar mensajes anteriores si es una instrucción prioritaria de frenada
         if priority:
-            while not self._queue.empty():
-                try:
-                    self._queue.get_nowait()
-                except Exception:
-                    break
+            self.purge_pending()
 
         try:
             self._queue.put_nowait(clean_text)
