@@ -16,7 +16,6 @@ propcache==0.5.4
 pyinstaller==6.11.1
 pyinstaller-hooks-contrib==2026.9
 pypiwin32==223
-pyttsx3==2.98
 pywin32==312
 pywin32-ctypes==0.2.3
 requests==2.32.3

@@ -32,11 +32,6 @@ try:
 except ImportError:
     gTTS = None
 
-try:
-    import pyttsx3
-except ImportError:
-    pyttsx3 = None
-
 
 def sanitize_spanish_for_speech(text: str) -> str:
     """
@@ -138,11 +133,6 @@ class VoiceEngineer:
         self.cache_dir = Path(tempfile.gettempdir()) / "acc_apex_radio_cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # Detectar si existe voz SAPI nativa en español
-        self._has_spanish_sapi = False
-        self._sapi_voice_id: Optional[str] = None
-        self._detect_sapi_spanish_voice()
-
         self._thread = threading.Thread(
             target=self._worker, daemon=True, name="VoiceEngineerThread"
         )
@@ -152,23 +142,6 @@ class VoiceEngineer:
         """Permite cambiar la voz de radio (es-ES-AlvaroNeural, es-MX-JorgeNeural, es-ES-ElviraNeural)."""
         if voice_name:
             self.voice_name = voice_name
-
-    def _detect_sapi_spanish_voice(self) -> None:
-        """Verifica si Windows tiene una voz en español instalada. Si solo tiene inglés, la descarta."""
-        if pyttsx3 is None:
-            return
-        try:
-            eng = pyttsx3.init()
-            voices = eng.getProperty("voices")
-            for v in voices:
-                name_low = (v.name or "").lower()
-                id_low = (v.id or "").lower()
-                if any(x in name_low or x in id_low for x in ("spanish", "español", "es-es", "es-mx", "helena", "sabina", "pablo")):
-                    self._has_spanish_sapi = True
-                    self._sapi_voice_id = v.id
-                    break
-        except Exception:
-            self._has_spanish_sapi = False
 
     def speak(self, message: str, priority: bool = False) -> None:
         if not self.enabled or not message or not message.strip():
@@ -293,20 +266,6 @@ class VoiceEngineer:
                         played = _play_mp3_winmm(cached_mp3)
                 except Exception:
                     played = False
-
-            # 4. Solo usar SAPI de Windows si TIENE voz en español comprobada
-            if not played and self._has_spanish_sapi and pyttsx3 is not None:
-                try:
-                    eng = pyttsx3.init()
-                    if self._sapi_voice_id:
-                        eng.setProperty("voice", self._sapi_voice_id)
-                    eng.setProperty("rate", 155)
-                    eng.setProperty("volume", 0.95)
-                    eng.say(text)
-                    eng.runAndWait()
-                    played = True
-                except Exception:
-                    pass
 
             self.is_speaking = False
 

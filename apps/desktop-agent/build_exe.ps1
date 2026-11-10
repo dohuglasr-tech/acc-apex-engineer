@@ -1,4 +1,4 @@
-# =============================================================================
+﻿# =============================================================================
 # ACC Apex Engineer Pro - Empaquetador del Ejecutable Único (.exe)
 # Usa siempre el entorno virtual local (.venv) siguiendo las buenas prácticas
 # =============================================================================
@@ -22,6 +22,9 @@ Write-Host "==> [3/4] Compilando ACC_Apex_Engineer.exe con PyInstaller..." -Fore
     --onefile `
     --windowed `
     --name "ACC_Apex_Engineer" `
+    --hidden-import "google.genai" `
+    --hidden-import "gtts" `
+    --hidden-import "edge_tts" `
     main.py
 
 Write-Host "==> [4/4] Copiando ejecutable a apps/web/public/downloads para descarga desde la Web..." -ForegroundColor Cyan
