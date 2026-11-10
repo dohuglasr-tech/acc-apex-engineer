@@ -278,6 +278,7 @@ class OverlayHUD:
     def __init__(self, root: tk.Tk, input_mode: str = "wheel") -> None:
         self.root = root
         self.input_mode = input_mode
+        self.voice_mode = "companion"
         self.last_setup_label = "EN ESPERA"
         self._visible = False
         self._current_radio_text = ""
@@ -436,6 +437,16 @@ class OverlayHUD:
             mode, mode.upper()
         )
         self.lbl_mode.configure(text=mode_es)
+
+    def set_voice_mode(self, mode: str) -> None:
+        if mode in ("companion", "car_state", "telemetry"):
+            self.voice_mode = mode
+            mode_text = {
+                "companion": "RADIO // ACOMPAÑANTE",
+                "car_state": "RADIO // ESTADO COCHE",
+                "telemetry": "RADIO // SOLO TELEMETRÍA",
+            }.get(mode, "RADIO // ÁLVARO")
+            self.lbl_radio_status.configure(text=mode_text)
 
     def set_setup_status(self, status_text: str) -> None:
         self.last_setup_label = status_text

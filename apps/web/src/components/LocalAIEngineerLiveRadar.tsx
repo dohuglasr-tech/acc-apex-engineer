@@ -131,7 +131,8 @@ function AgentAvatarLiveWeb({ isTransmitting }: { isTransmitting: boolean }) {
 }
 
 export function LocalAIEngineerLiveRadar() {
-  const { engineerState, frame, isAccLive } = useTelemetry();
+  const { engineerState, frame, isAccLive, voiceMode, setVoiceMode } =
+    useTelemetry();
   const [showHistory, setShowHistory] = useState(false);
 
   if (!isAccLive || !frame) return null;
@@ -226,6 +227,66 @@ export function LocalAIEngineerLiveRadar() {
         </div>
       </div>
 
+      {/* Selector de Comportamiento del Ingeniero por Voz en Tiempo Real */}
+      <div className="bg-[#0D0D12] border-b border-zinc-800/80 px-4 py-2 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-zinc-400">
+            COMPORTAMIENTO POR VOZ:
+          </span>
+          <span className="text-[10px] text-zinc-500 font-mono hidden sm:inline">
+            (Sincronización instantánea en cabina)
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {[
+            {
+              id: "companion" as const,
+              label: "Acompañante",
+              tag: "Curvas y trazada",
+            },
+            {
+              id: "car_state" as const,
+              label: "Solo estado del coche",
+              tag: "Presiones y frenos",
+            },
+            {
+              id: "telemetry" as const,
+              label: "Solo telemetría",
+              tag: "Tiempos y deltas",
+            },
+          ].map((mode) => {
+            const active = voiceMode === mode.id;
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => setVoiceMode(mode.id)}
+                className={`flex items-center gap-2 px-3 py-1 rounded text-xs font-mono transition ${
+                  active
+                    ? "bg-[#E10600] text-white font-bold shadow-md shadow-[#E10600]/25 border border-[#E10600]"
+                    : "bg-zinc-900/90 text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-800"
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    active ? "bg-white animate-pulse" : "bg-zinc-600"
+                  }`}
+                />
+                <span className="uppercase tracking-wider">{mode.label}</span>
+                <span
+                  className={`text-[9px] uppercase hidden md:inline ${
+                    active ? "text-red-100" : "text-zinc-500"
+                  }`}
+                >
+                  · {mode.tag}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Grid Principal: Radar de Próxima Curva + Transmisión de Radio + Último Análisis */}
       <div className="grid grid-cols-1 lg:grid-cols-12 divide-y lg:divide-y-0 lg:divide-x divide-zinc-800">
         {/* COLUMNA 1: RADAR ANTICIPADO DE CURVA (5 cols) */}
@@ -315,10 +376,18 @@ export function LocalAIEngineerLiveRadar() {
           ) : (
             <div className="py-6 text-center space-y-2">
               <div className="text-zinc-600 font-mono text-xs uppercase tracking-wider">
-                SIN FRENADA INMINENTE
+                {voiceMode === "companion"
+                  ? "SIN FRENADA INMINENTE"
+                  : voiceMode === "car_state"
+                  ? "MODO SOLO ESTADO DEL COCHE ACTIVO"
+                  : "MODO SOLO TELEMETRÍA ACTIVO"}
               </div>
               <p className="text-xs text-zinc-400 max-w-sm mx-auto leading-relaxed">
-                El ingeniero está calculando la telemetría en tiempo real. Te alertará por radio 3 segundos antes del cartel de frenada.
+                {voiceMode === "companion"
+                  ? "El ingeniero está calculando la telemetría en tiempo real. Te alertará por radio 3 segundos antes del cartel de frenada."
+                  : voiceMode === "car_state"
+                  ? "Voz silenciada en curvas y trazadas. Álvaro solo transmitirá por radio si detecta presiones críticas, frenos sobrecalentados o reserva de combustible."
+                  : "Voz silenciada en curvas y coche. Álvaro únicamente cantará los tiempos oficiales al completar cada vuelta al cruzar meta."}
               </p>
             </div>
           )}
@@ -347,7 +416,15 @@ export function LocalAIEngineerLiveRadar() {
               <div className="space-y-1.5 flex-1 min-w-0">
                 <div className="flex items-center justify-between text-[10px] font-mono">
                   <span className="text-[#E10600] font-bold uppercase tracking-wider">
-                    {isTransmitting ? "HABLANDO EN CABINA" : "ÁLVARO · LISTO"}
+                    {isTransmitting
+                      ? "HABLANDO EN CABINA"
+                      : `ÁLVARO · ${
+                          voiceMode === "companion"
+                            ? "ACOMPAÑANTE"
+                            : voiceMode === "car_state"
+                            ? "ESTADO COCHE"
+                            : "SOLO TELEMETRÍA"
+                        }`}
                   </span>
                   <span className="text-zinc-500">
                     {radio?.time_str || "EN VIVO"}
@@ -361,9 +438,13 @@ export function LocalAIEngineerLiveRadar() {
           </div>
 
           <div className="pt-2 text-[11px] text-zinc-500 font-mono flex items-center justify-between border-t border-zinc-800/60">
-            <span>MODO DE CONDUCCIÓN:</span>
-            <span className="text-zinc-300 font-semibold uppercase">
-              {frame.is_in_pit ? "EN BOXES" : "EN PISTA"}
+            <span>MODO DE VOZ:</span>
+            <span className="text-[#E10600] font-semibold uppercase">
+              {voiceMode === "companion"
+                ? "ACOMPAÑANTE"
+                : voiceMode === "car_state"
+                ? "SOLO ESTADO DEL COCHE"
+                : "SOLO TELEMETRÍA"}
             </span>
           </div>
         </div>

@@ -110,6 +110,7 @@ class SupabaseCloudSync:
         is_live: bool,
         input_mode: str,
         live_payload: Optional[Dict[str, Any]],
+        on_response: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> None:
         if not self.is_configured or self._push_in_flight:
             return
@@ -118,7 +119,7 @@ class SupabaseCloudSync:
 
         def _task() -> None:
             try:
-                requests.post(
+                resp = requests.post(
                     f"{self.supabase_url}/rest/v1/rpc/agent_push_live_state",
                     headers=self._headers(),
                     json={
@@ -129,6 +130,10 @@ class SupabaseCloudSync:
                     },
                     timeout=4,
                 )
+                if resp.ok and on_response:
+                    data = resp.json() if resp.text else {}
+                    if isinstance(data, dict):
+                        on_response(data)
             except Exception:
                 pass
             finally:
@@ -210,6 +215,8 @@ class ApexDesktopAgentApp:
         self.injector = AutoSetupInjector(input_mode=initial_mode)
         self.voice = VoiceEngineer(enabled=bool(self.config.get("voice_enabled", True)))
         self.ai_engineer = LocalAIEngineer(voice_engine=self.voice, input_mode=initial_mode)
+        initial_voice = self.config.get("voice_mode") or "companion"
+        self.ai_engineer.set_voice_mode(initial_voice)
         self.cloud_sync = SupabaseCloudSync(self.config)
 
         self.latest_sample: Optional[TelemetrySample] = None
@@ -227,6 +234,7 @@ class ApexDesktopAgentApp:
             on_config_applied=self._on_config_applied,
         )
         self.hud = OverlayHUD(self.root, input_mode=initial_mode)
+        self.hud.set_voice_mode(initial_voice)
 
         self._physics_thread = threading.Thread(
             target=self._physics_loop_333hz, daemon=True, name="Physics333HzThread"
@@ -249,6 +257,9 @@ class ApexDesktopAgentApp:
         self.injector.set_input_mode(mode)
         self.ai_engineer.set_input_mode(mode)
         self.hud.set_input_mode(mode)
+        if updated_cfg.get("voice_mode"):
+            self.ai_engineer.set_voice_mode(updated_cfg["voice_mode"])
+            self.hud.set_voice_mode(updated_cfg["voice_mode"])
         self.voice.enabled = bool(updated_cfg.get("voice_enabled", True))
         self.cloud_sync.update_config(updated_cfg)
 
@@ -321,14 +332,25 @@ class ApexDesktopAgentApp:
         }
 
         self.hud.set_setup_status(f"APEX_AUTO_LIVE.json (v{version_num})")
-        primary_err = lap.driving_errors[0]["type"] if lap.driving_errors else None
-        self.voice.announce_lap_and_setup(
-            lap_number=lap.lap_number,
-            lap_time_ms=lap.lap_time_ms,
-            version_num=version_num,
-            primary_error=primary_err,
-            input_mode=lap.input_mode,
-        )
+        if self.ai_engineer.voice_mode == "telemetry":
+            lap_sec = round(lap.lap_time_ms / 1000.0, 3)
+            mins = int(lap_sec // 60)
+            secs = int(lap_sec % 60)
+            tenths = int(round((lap_sec - int(lap_sec)) * 10))
+            if mins > 0:
+                lap_msg = f"Vuelta {lap.lap_number}: {mins} minuto{'s' if mins != 1 else ''}, {secs} segundos y {tenths} décimas."
+            else:
+                lap_msg = f"Vuelta {lap.lap_number}: {secs} segundos y {tenths} décimas."
+            self.voice.speak(lap_msg)
+        elif self.ai_engineer.voice_mode == "companion":
+            primary_err = lap.driving_errors[0]["type"] if lap.driving_errors else None
+            self.voice.announce_lap_and_setup(
+                lap_number=lap.lap_number,
+                lap_time_ms=lap.lap_time_ms,
+                version_num=version_num,
+                primary_error=primary_err,
+                input_mode=lap.input_mode,
+            )
         self.cloud_sync.sync_lap_and_setup_async(
             lap=lap,
             setup_file_name=live_path.name,
@@ -384,7 +406,19 @@ class ApexDesktopAgentApp:
                     "live_errors": self.analyzer.live_errors,
                     "engineer_state": self.ai_engineer.get_state(),
                 }
-            self.cloud_sync.push_live_state_async(is_live, mode, live_payload)
+
+            def _on_cloud_push_resp(data: Dict[str, Any]) -> None:
+                remote_voice = data.get("voice_mode")
+                if remote_voice and remote_voice in ("companion", "car_state", "telemetry"):
+                    if self.ai_engineer.voice_mode != remote_voice:
+                        self.config["voice_mode"] = remote_voice
+                        save_agent_config(self.config)
+                        self.ai_engineer.set_voice_mode(remote_voice)
+                        self.hud.set_voice_mode(remote_voice)
+
+            self.cloud_sync.push_live_state_async(
+                is_live, mode, live_payload, on_response=_on_cloud_push_resp
+            )
 
         if self.running:
             self.root.after(50, self._refresh_hud_loop)
@@ -404,6 +438,14 @@ class ApexDesktopAgentApp:
                                 self.config["agent_token"] = cmd["agent_token"]
                             save_agent_config(self.config)
                             self._on_config_applied(self.config)
+                        elif cmd.get("action") == "set_voice_mode" and cmd.get(
+                            "voice_mode"
+                        ) in ("companion", "car_state", "telemetry"):
+                            mode = cmd["voice_mode"]
+                            self.config["voice_mode"] = mode
+                            save_agent_config(self.config)
+                            self.ai_engineer.set_voice_mode(mode)
+                            self.hud.set_voice_mode(mode)
                     except Exception:
                         pass
             except Exception:
@@ -421,6 +463,7 @@ class ApexDesktopAgentApp:
                                 "type": "telemetry_frame",
                                 "is_live_acc": True,
                                 "input_mode": self.config.get("input_mode") or "gamepad",
+                                "voice_mode": self.ai_engineer.voice_mode,
                                 "live_alert": self.analyzer.live_alert,
                                 "sample": sample.to_dict(),
                                 "active_setup": self.injector.get_current_setup(
@@ -439,6 +482,7 @@ class ApexDesktopAgentApp:
                                 "type": "telemetry_standby",
                                 "is_live_acc": False,
                                 "input_mode": self.config.get("input_mode") or "gamepad",
+                                "voice_mode": self.ai_engineer.voice_mode,
                             }
                         )
                     stale = set()

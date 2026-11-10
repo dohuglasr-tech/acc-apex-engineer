@@ -42,6 +42,7 @@ class LocalAIEngineer:
     def __init__(self, voice_engine: Optional[Any] = None, input_mode: str = "gamepad") -> None:
         self.voice = voice_engine
         self.input_mode = input_mode if input_mode in ("keyboard", "gamepad", "wheel") else "gamepad"
+        self.voice_mode: str = "companion"  # "companion", "car_state", "telemetry"
         self.current_track_name: str = ""
         self.track_knowledge: Optional[TrackKnowledge] = None
 
@@ -51,6 +52,8 @@ class LocalAIEngineer:
         self.last_spoken_corner_id: Optional[str] = None
         self.last_spoken_lap: int = -1
         self.last_speech_ts: float = 0.0
+        self._last_car_state_call_ts: float = 0.0
+        self._last_car_alert_key: str = ""
 
         # Monitoreo en curva
         self.active_corner: Optional[CornerKnowledge] = None
@@ -70,6 +73,18 @@ class LocalAIEngineer:
     def set_input_mode(self, mode: str) -> None:
         if mode in ("keyboard", "gamepad", "wheel"):
             self.input_mode = mode
+
+    def set_voice_mode(self, mode: str) -> None:
+        """Cambia el comportamiento del agente de radio en tiempo real."""
+        if mode in ("companion", "car_state", "telemetry") and mode != self.voice_mode:
+            self.voice_mode = mode
+            mode_names = {
+                "companion": "Modo Acompañante activado. Te cantaré curvas, referencias y estado del coche.",
+                "car_state": "Modo Solo Estado del Coche activado. Silencio en curvas, solo alertas mecánicas y presiones.",
+                "telemetry": "Modo Solo Telemetría activado. Silencio en pista, únicamente métricas y tiempos de vuelta.",
+            }
+            if self._greeted_session:
+                self._broadcast_radio(mode_names.get(mode, ""), "alert")
 
     def _ensure_track(self, raw_track_name: str) -> None:
         if raw_track_name and raw_track_name != self.current_track_name:
@@ -147,7 +162,12 @@ class LocalAIEngineer:
 
         # 3. DETECTAR SI DEBEMOS TRANSMITIR LA ANTICIPACIÓN POR RADIO
         # Ventana de disparo: entre 130m y 220m (o 2.8s a 4.5s antes del frenado)
-        if best_corner and (110.0 <= min_dist_m <= 220.0 or 2.6 <= min_seconds <= 4.2):
+        # Solo en modo "companion" (Acompañante)
+        if (
+            self.voice_mode == "companion"
+            and best_corner
+            and (110.0 <= min_dist_m <= 220.0 or 2.6 <= min_seconds <= 4.2)
+        ):
             corner_key = f"{best_corner.id}_{sample.completed_laps}"
             if self.last_spoken_corner_id != corner_key and (now - self.last_speech_ts) >= 4.0:
                 self.last_spoken_corner_id = corner_key
@@ -238,13 +258,73 @@ class LocalAIEngineer:
                 }
 
                 # Emitir consejo por radio si es relevante y no estamos saturando la radio
-                if (now - self.last_speech_ts) >= 7.0 and (score < 85 or (score >= 95 and (sample.completed_laps % 2 == 0))):
+                # Solo en modo "companion" (Acompañante)
+                if (
+                    self.voice_mode == "companion"
+                    and (now - self.last_speech_ts) >= 7.0
+                    and (score < 85 or (score >= 95 and (sample.completed_laps % 2 == 0)))
+                ):
                     self.last_speech_ts = now
                     self._broadcast_radio(tip_text, category)
 
                 self.active_corner = None
 
+        # 5. MONITOREO DE ESTADO DEL COCHE (Modos "companion" y "car_state")
+        # Silenciado en "telemetry"
+        if self.voice_mode in ("companion", "car_state"):
+            self._check_car_state_alerts(sample, now)
+
         return self.get_state()
+
+    def _check_car_state_alerts(self, sample: TelemetrySample, now: float) -> None:
+        """
+        Monitorea presiones de neumáticos, temperaturas de frenos y combustible.
+        Solo emite en rectas para no desconcentrar al piloto en plena curva.
+        """
+        if self.active_corner is not None or sample.speed_kmh < 70.0:
+            return
+
+        if (now - self._last_car_state_call_ts) < 35.0 or (now - self.last_speech_ts) < 6.0:
+            return
+
+        # 1. Combustible crítico
+        if 0.0 < sample.fuel <= 9.0 and self._last_car_alert_key != f"fuel_{int(sample.fuel)}":
+            self._last_car_alert_key = f"fuel_{int(sample.fuel)}"
+            self._last_car_state_call_ts = now
+            self.last_speech_ts = now
+            liters = round(sample.fuel, 1)
+            msg = f"Aviso de reserva: te quedan {liters} litros de combustible. Prepara la parada en boxes."
+            self._broadcast_radio(msg, "alert")
+            return
+
+        # 2. Temperatura de frenos excesiva (> 650°C)
+        max_brake = max(sample.brake_temps) if sample.brake_temps else 0.0
+        if max_brake > 650.0 and self._last_car_alert_key != "brakes_hot":
+            self._last_car_alert_key = "brakes_hot"
+            self._last_car_state_call_ts = now
+            self.last_speech_ts = now
+            msg = f"Atención a los frenos: temperatura en {int(max_brake)} grados. Refrigera en la recta o levanta un poco."
+            self._broadcast_radio(msg, "alert")
+            return
+
+        # 3. Presiones de neumáticos fuera de ventana óptima GT3 (26.6 - 27.2 psi)
+        min_p = min(sample.tyre_pressures) if sample.tyre_pressures else 0.0
+        max_p = max(sample.tyre_pressures) if sample.tyre_pressures else 0.0
+        if min_p > 10.0 and min_p < 25.8 and self._last_car_alert_key != "tyres_cold":
+            self._last_car_alert_key = "tyres_cold"
+            self._last_car_state_call_ts = now
+            self.last_speech_ts = now
+            msg = f"Presiones frías: mínima en {round(min_p, 1)} libras. Calienta bien los neumáticos antes de tirar."
+            self._broadcast_radio(msg, "alert")
+            return
+
+        if max_p > 28.1 and self._last_car_alert_key != "tyres_hot":
+            self._last_car_alert_key = "tyres_hot"
+            self._last_car_state_call_ts = now
+            self.last_speech_ts = now
+            msg = f"Presiones altas por sobrecalentamiento: {round(max_p, 1)} libras. Cuida la goma en apoyos largos."
+            self._broadcast_radio(msg, "alert")
+            return
 
     def _broadcast_radio(self, text: str, category: str) -> None:
         """Emite por voz y guarda en el historial de radio."""
@@ -295,6 +375,7 @@ class LocalAIEngineer:
 
         return {
             "engineer_name": "Álvaro (Ingeniero de Pista IA)",
+            "voice_mode": self.voice_mode,
             "status": "transmitting" if is_transmitting else "monitoring",
             "upcoming_corner": self.upcoming_corner_data,
             "current_corner": {

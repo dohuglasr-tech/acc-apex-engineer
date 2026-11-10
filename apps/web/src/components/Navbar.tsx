@@ -7,7 +7,7 @@ import { useTelemetry } from "@/lib/telemetry-store";
 
 export function Navbar() {
   const pathname = usePathname();
-  const { profile, inputMode, agentConnected, isAccLive, frame } =
+  const { profile, inputMode, voiceMode, agentConnected, isAccLive, frame } =
     useTelemetry();
 
   const navItems = [
@@ -26,6 +26,13 @@ export function Navbar() {
       : inputMode === "wheel"
       ? "VOLANTE"
       : "SIN CONFIGURAR";
+
+  const voiceLabel =
+    voiceMode === "companion"
+      ? "ACOMPAÑANTE"
+      : voiceMode === "car_state"
+      ? "ESTADO COCHE"
+      : "SOLO TELEMETRÍA";
 
   return (
     <header className="sticky top-0 z-40 bg-black">
@@ -116,6 +123,15 @@ export function Navbar() {
                 </div>
                 <div className="text-xs text-white font-semibold mt-0.5">
                   {modeLabel}
+                </div>
+              </div>
+
+              <div className="border-r border-zinc-800 pr-6 hidden sm:block">
+                <div className="text-[10px] text-zinc-500 uppercase tracking-wider">
+                  RADIO IA
+                </div>
+                <div className="text-xs text-[#E10600] font-semibold mt-0.5">
+                  {voiceLabel}
                 </div>
               </div>
 

@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { InputMode, useTelemetry } from "@/lib/telemetry-store";
+import { InputMode, VoiceMode, useTelemetry } from "@/lib/telemetry-store";
 import { LiveMoTeCGauges } from "@/components/LiveMoTeCGauges";
 import { LocalAIEngineerLiveRadar } from "@/components/LocalAIEngineerLiveRadar";
 import { LapTelemetryChart } from "@/components/LapTelemetryChart";
@@ -24,6 +24,8 @@ export default function DashboardPage() {
     liveAlert,
     inputMode,
     setInputMode,
+    voiceMode,
+    setVoiceMode,
     profile,
     setups,
     drivingErrors,
@@ -35,6 +37,13 @@ export default function DashboardPage() {
       : inputMode === "gamepad"
       ? "MANDO / CONTROLADOR"
       : "VOLANTE Y PEDALES";
+
+  const voiceModeLabel =
+    voiceMode === "companion"
+      ? "ACOMPAÑANTE"
+      : voiceMode === "car_state"
+      ? "ESTADO DEL COCHE"
+      : "SOLO TELEMETRÍA";
 
   if (!isAccLive || !frame) {
     return (
@@ -117,6 +126,59 @@ export default function DashboardPage() {
                   <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/40 text-emerald-400 text-[10px] uppercase tracking-wider">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                     COMPLETADO ({modeLabel})
+                  </span>
+                </td>
+              </tr>
+
+              {/* PASO 01-B: COMPORTAMIENTO DEL INGENIERO POR VOZ */}
+              <tr className="hover:bg-zinc-950/60 transition">
+                <td className="py-5 pr-4 font-mono text-zinc-400 align-top">
+                  RADIO IA
+                </td>
+                <td className="py-5 px-4 align-top max-w-md">
+                  <div className="font-semibold text-white text-sm">
+                    Comportamiento del Ingeniero por Voz (Álvaro)
+                  </div>
+                  <p className="text-zinc-400 mt-1 leading-relaxed">
+                    Elige cómo interactúa el copiloto contigo por radio en tiempo real:
+                    <br />
+                    • <strong className="text-white">Acompañante:</strong> anticipa curvas, frenadas, motivación y telemetría.
+                    <br />
+                    • <strong className="text-white">Solo estado del coche:</strong> silencio en curvas, te alerta de presiones fuera de rango, frenos calientes y gasolina.
+                    <br />
+                    • <strong className="text-white">Solo telemetría:</strong> métricas puras, anuncia tiempos al cruzar meta sin comentarios.
+                  </p>
+                </td>
+                <td className="py-5 px-4 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(
+                      [
+                        { id: "companion", label: "Acompañante" },
+                        { id: "car_state", label: "Solo estado del coche" },
+                        { id: "telemetry", label: "Solo telemetría" },
+                      ] as { id: VoiceMode; label: string }[]
+                    ).map((vm) => {
+                      const active = (voiceMode || "companion") === vm.id;
+                      return (
+                        <button
+                          key={vm.id}
+                          onClick={() => setVoiceMode(vm.id)}
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-medium border transition ${
+                            active
+                              ? "border-[#E10600] bg-[#E10600]/15 text-white font-bold"
+                              : "border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-white"
+                          }`}
+                        >
+                          {vm.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </td>
+                <td className="py-5 pl-4 text-right font-mono align-top">
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/40 text-emerald-400 text-[10px] uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    {voiceModeLabel}
                   </span>
                 </td>
               </tr>

@@ -11,6 +11,7 @@ import React, {
 import { createClient, isSupabaseConfigured } from "./supabase/client";
 
 export type InputMode = "keyboard" | "gamepad" | "wheel";
+export type VoiceMode = "companion" | "car_state" | "telemetry";
 
 export interface TelemetryFrame {
   is_live_acc: boolean;
@@ -116,6 +117,7 @@ export interface UserProfile {
   input_mode: InputMode | null;
   wheel_type: string | null;
   agent_token: string;
+  voice_mode?: VoiceMode | null;
 }
 
 export interface ActiveAccSetup {
@@ -229,6 +231,7 @@ export interface TrackInfo {
 
 export interface EngineerState {
   engineer_name: string;
+  voice_mode?: VoiceMode;
   status: "transmitting" | "monitoring" | "standby";
   upcoming_corner: UpcomingCornerInfo | null;
   current_corner: {
@@ -246,6 +249,8 @@ interface TelemetryContextValue {
   profile: UserProfile | null;
   inputMode: InputMode | null;
   setInputMode: (mode: InputMode, wheelType?: string) => Promise<void>;
+  voiceMode: VoiceMode;
+  setVoiceMode: (mode: VoiceMode) => Promise<void>;
   agentConnected: boolean;
   isAccLive: boolean;
   agentHost: string;
@@ -264,6 +269,7 @@ const TelemetryContext = createContext<TelemetryContextValue | null>(null);
 export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [inputMode, setInputModeState] = useState<InputMode | null>("gamepad");
+  const [voiceMode, setVoiceModeState] = useState<VoiceMode>("companion");
   const [wsConnected, setWsConnected] = useState(false);
   const [cloudHeartbeatActive, setCloudHeartbeatActive] = useState(false);
   const [isAccLive, setIsAccLive] = useState(false);
@@ -293,6 +299,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
       if (!state || !state.found || !state.profile) return;
 
       const prof = state.profile;
+      const remoteVoiceMode = (prof.voice_mode as VoiceMode) || "companion";
       setProfile({
         id: prof.id,
         discord_username: prof.discord_username || "Piloto",
@@ -300,10 +307,17 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         input_mode: (prof.input_mode as InputMode) || "gamepad",
         wheel_type: prof.wheel_type || null,
         agent_token: prof.agent_token,
+        voice_mode: remoteVoiceMode,
       });
 
       if (prof.input_mode) {
         setInputModeState(prof.input_mode as InputMode);
+      }
+      if (
+        prof.voice_mode &&
+        ["companion", "car_state", "telemetry"].includes(prof.voice_mode)
+      ) {
+        setVoiceModeState(prof.voice_mode as VoiceMode);
       }
 
       const secSinceSeen = Number(prof.seconds_since_seen ?? 999);
@@ -427,6 +441,12 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
               ["keyboard", "gamepad", "wheel"].includes(data.input_mode)
             ) {
               setInputModeState(data.input_mode as InputMode);
+            }
+            if (
+              data.voice_mode &&
+              ["companion", "car_state", "telemetry"].includes(data.voice_mode)
+            ) {
+              setVoiceModeState(data.voice_mode as VoiceMode);
             }
 
             if (data.type === "telemetry_standby" || !data.is_live_acc) {
@@ -558,6 +578,34 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
     [profile?.agent_token]
   );
 
+  const setVoiceMode = useCallback(
+    async (mode: VoiceMode) => {
+      setVoiceModeState(mode);
+      setProfile((prev) => (prev ? { ...prev, voice_mode: mode } : prev));
+
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({ action: "set_voice_mode", voice_mode: mode })
+        );
+      }
+
+      if (isSupabaseConfigured()) {
+        try {
+          const supabase = createClient();
+          const tokenToUpdate =
+            profile?.agent_token || "6be5b7f2-a67b-47f6-be2c-7a5297d04abd";
+          await supabase.rpc("update_agent_voice_mode", {
+            p_agent_token: tokenToUpdate,
+            p_voice_mode: mode,
+          });
+        } catch {
+          // ignore
+        }
+      }
+    },
+    [profile?.agent_token]
+  );
+
   const agentConnected = wsConnected || cloudHeartbeatActive;
 
   return (
@@ -566,6 +614,8 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         profile,
         inputMode,
         setInputMode,
+        voiceMode,
+        setVoiceMode,
         agentConnected,
         isAccLive,
         agentHost,
