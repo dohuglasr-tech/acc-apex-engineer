@@ -1,21 +1,71 @@
 """
 ACC Apex Engineer Pro - Lector de Memoria Compartida a 333 Hz (shm_reader.py)
-Lee exclusivamente en modo LECTURA (ACCESS_READ):
+Usa exclusivamente Win32 OpenFileMappingW(FILE_MAP_READ) + MapViewOfFile(FILE_MAP_READ)
+para NUNCA crear ni bloquear los bloques de memoria antes que Assetto Corsa Competizione:
   - Local\\acpmf_physics
   - Local\\acpmf_graphics
   - Local\\acpmf_static
-Sin simulaciones ni datos ficticios: solo devuelve datos cuando Assetto Corsa Competizione
-está abierto y con sesión activa en pista.
+Esto evita por completo el crash EXCEPTION_ACCESS_VIOLATION (0x0000000000000000) en AC Physics Thread
+cuando el agente se abre antes de iniciar carrera en ACC.
 """
 
 from __future__ import annotations
 
 import ctypes
-from ctypes import c_float, c_int32, c_wchar
-import mmap
+from ctypes import c_float, c_int32, c_size_t, c_void_p, c_wchar, wintypes
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Type, TypeVar
+
+FILE_MAP_READ = 0x0004
+
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+kernel32.OpenFileMappingW.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR]
+kernel32.OpenFileMappingW.restype = wintypes.HANDLE
+
+kernel32.MapViewOfFile.argtypes = [
+    wintypes.HANDLE,
+    wintypes.DWORD,
+    wintypes.DWORD,
+    wintypes.DWORD,
+    c_size_t,
+]
+kernel32.MapViewOfFile.restype = c_void_p
+
+kernel32.UnmapViewOfFile.argtypes = [c_void_p]
+kernel32.UnmapViewOfFile.restype = wintypes.BOOL
+
+kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+kernel32.CloseHandle.restype = wintypes.BOOL
+
+T = TypeVar("T", bound=ctypes.Structure)
+
+
+def read_existing_shm_struct(map_name: str, struct_cls: Type[T]) -> Optional[T]:
+    """
+    Abre un bloque de memoria compartida SOLO SI YA FUE CREADO por ACC (OpenFileMappingW).
+    Jamás llama a CreateFileMappingW, evitando dejar secciones PAGE_READONLY que hagan
+    crachear al hilo AC Physics Thread al iniciar sesión.
+    """
+    h_map = kernel32.OpenFileMappingW(FILE_MAP_READ, False, map_name)
+    if not h_map:
+        return None
+
+    size = ctypes.sizeof(struct_cls)
+    p_view = kernel32.MapViewOfFile(h_map, FILE_MAP_READ, 0, 0, size)
+    if not p_view:
+        kernel32.CloseHandle(h_map)
+        return None
+
+    try:
+        buf = (ctypes.c_char * size).from_address(p_view)
+        return struct_cls.from_buffer_copy(buf)
+    except Exception:
+        return None
+    finally:
+        kernel32.UnmapViewOfFile(p_view)
+        kernel32.CloseHandle(h_map)
 
 
 class SPageFilePhysics(ctypes.Structure):
@@ -251,75 +301,32 @@ class TelemetrySample:
 
 class ACCSharedMemoryReader:
     """
-    Lee Local\\acpmf_physics, Local\\acpmf_graphics y Local\\acpmf_static a 333 Hz (cada 3 ms).
-    Retorna None si Assetto Corsa Competizione está cerrado o fuera de sesión activa.
+    Lee Local\\acpmf_physics, Local\\acpmf_graphics y Local\\acpmf_static usando OpenFileMappingW.
+    Nunca pre-crea los segmentos de memoria en modo lectura, permitiendo abrir el agente
+    antes o después de Assetto Corsa Competizione sin provocar fallos en AC Physics Thread.
     """
 
     def __init__(self) -> None:
-        self._mm_physics: Optional[mmap.mmap] = None
-        self._mm_graphics: Optional[mmap.mmap] = None
-        self._mm_static: Optional[mmap.mmap] = None
         self._last_packet_id: int = -1
         self._stale_count: int = 0
 
-    def _open_shared_memory(self) -> bool:
-        try:
-            if self._mm_physics is None:
-                self._mm_physics = mmap.mmap(
-                    -1,
-                    ctypes.sizeof(SPageFilePhysics),
-                    "Local\\acpmf_physics",
-                    access=mmap.ACCESS_READ,
-                )
-            if self._mm_graphics is None:
-                self._mm_graphics = mmap.mmap(
-                    -1,
-                    ctypes.sizeof(SPageFileGraphic),
-                    "Local\\acpmf_graphics",
-                    access=mmap.ACCESS_READ,
-                )
-            if self._mm_static is None:
-                self._mm_static = mmap.mmap(
-                    -1,
-                    ctypes.sizeof(SPageFileStatic),
-                    "Local\\acpmf_static",
-                    access=mmap.ACCESS_READ,
-                )
-            return True
-        except Exception:
-            self.close()
-            return False
-
     def close(self) -> None:
-        for mm in (self._mm_physics, self._mm_graphics, self._mm_static):
-            if mm is not None:
-                try:
-                    mm.close()
-                except Exception:
-                    pass
-        self._mm_physics = None
-        self._mm_graphics = None
-        self._mm_static = None
+        pass
 
     def read_sample(self) -> Optional[TelemetrySample]:
-        if not self._open_shared_memory():
+        phys = read_existing_shm_struct("Local\\acpmf_physics", SPageFilePhysics)
+        if phys is None:
+            return None
+
+        gfx = read_existing_shm_struct("Local\\acpmf_graphics", SPageFileGraphic)
+        if gfx is None:
+            return None
+
+        stc = read_existing_shm_struct("Local\\acpmf_static", SPageFileStatic)
+        if stc is None:
             return None
 
         try:
-            assert self._mm_physics and self._mm_graphics and self._mm_static
-            self._mm_physics.seek(0)
-            phys = SPageFilePhysics.from_buffer_copy(
-                self._mm_physics.read(ctypes.sizeof(SPageFilePhysics))
-            )
-            self._mm_graphics.seek(0)
-            gfx = SPageFileGraphic.from_buffer_copy(
-                self._mm_graphics.read(ctypes.sizeof(SPageFileGraphic))
-            )
-            self._mm_static.seek(0)
-            stc = SPageFileStatic.from_buffer_copy(
-                self._mm_static.read(ctypes.sizeof(SPageFileStatic))
-            )
-
             # AC_OFF = 0: El juego no está en sesión activa
             if phys.packetId <= 0 or gfx.status <= 0:
                 return None
@@ -351,7 +358,7 @@ class ACCSharedMemoryReader:
                 packet_id=int(phys.packetId),
                 car_model=car_model,
                 track_name=track_name,
-                driver_name=(stc.playerNick or stc.playerName or "Driver").strip(),
+                driver_name=(stc.playerNick or stc.playerName or "Piloto").strip(),
                 completed_laps=int(gfx.completedLaps),
                 current_lap_ms=max(0, int(gfx.iCurrentTime)),
                 last_lap_ms=max(0, int(gfx.iLastTime)),
@@ -385,5 +392,4 @@ class ACCSharedMemoryReader:
                 ),
             )
         except Exception:
-            self.close()
             return None
