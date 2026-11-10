@@ -360,6 +360,9 @@ class ApexDesktopAgentApp:
             if is_live and sample is not None:
                 live_payload = {
                     "sample": sample.to_dict(),
+                    "active_setup": self.injector.get_current_setup(
+                        sample.car_model, sample.track_name
+                    ),
                     "live_alert": self.analyzer.live_alert,
                     "live_trace": self.analyzer.live_trace,
                     "live_errors": self.analyzer.live_errors,
@@ -403,6 +406,9 @@ class ApexDesktopAgentApp:
                                 "input_mode": self.config.get("input_mode") or "gamepad",
                                 "live_alert": self.analyzer.live_alert,
                                 "sample": sample.to_dict(),
+                                "active_setup": self.injector.get_current_setup(
+                                    sample.car_model, sample.track_name
+                                ),
                                 "live_trace": self.analyzer.live_trace,
                                 "live_errors": self.analyzer.live_errors,
                                 "latest_setup": self.latest_setup_event,

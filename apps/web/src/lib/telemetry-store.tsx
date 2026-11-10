@@ -25,6 +25,8 @@ export interface TelemetryFrame {
   sector_index: number;
   last_sector_ms: number;
   normalized_pos: number;
+  is_in_pit?: boolean;
+  is_in_pit_lane?: boolean;
   speed_kmh: number;
   rpms: number;
   max_rpm: number;
@@ -35,9 +37,26 @@ export interface TelemetryFrame {
   fuel: number;
   tyre_pressures: [number, number, number, number];
   tyre_temps_core: [number, number, number, number];
+  tyre_temps_imo?: [
+    [number, number, number],
+    [number, number, number],
+    [number, number, number],
+    [number, number, number]
+  ];
+  tyre_wear?: [number, number, number, number];
+  pad_life?: [number, number, number, number];
+  disc_life?: [number, number, number, number];
+  camber_deg?: [number, number, number, number];
   brake_temps: [number, number, number, number];
   wheel_slip: [number, number, number, number];
+  suspension_travel: [number, number, number, number];
   ride_height: [number, number];
+  tc_level?: number;
+  abs_level?: number;
+  front_brake_compound?: number;
+  rear_brake_compound?: number;
+  tyre_compound?: string;
+  water_temp?: number;
   tc_in_action: boolean;
   abs_in_action: boolean;
   air_temp: number;
@@ -99,6 +118,67 @@ export interface UserProfile {
   agent_token: string;
 }
 
+export interface ActiveAccSetup {
+  basicSetup?: {
+    tyres?: {
+      tyreCompound?: number;
+      tyrePressure?: [number, number, number, number];
+    };
+    alignment?: {
+      camber?: [number, number, number, number];
+      toe?: [number, number, number, number];
+      staticCamber?: [number, number, number, number];
+      toeOutLinear?: [number, number, number, number];
+      casterLF?: number;
+      casterRF?: number;
+      steerRatio?: number;
+    };
+    electronics?: {
+      tC1?: number;
+      tC2?: number;
+      abs?: number;
+      eCUMap?: number;
+      fuelMix?: number;
+      telemetryLaps?: number;
+    };
+    strategy?: {
+      fuel?: number;
+      nPitStops?: number;
+      tyreSet?: number;
+      frontBrakePadCompound?: number;
+      rearBrakePadCompound?: number;
+      fuelPerLap?: number;
+    };
+  };
+  advancedSetup?: {
+    mechanicalBalance?: {
+      aRBFront?: number;
+      aRBRear?: number;
+      wheelRate?: [number, number, number, number];
+      bumpStopRateUp?: [number, number, number, number];
+      bumpStopRateDn?: [number, number, number, number];
+      bumpStopWindow?: [number, number, number, number];
+      brakeTorque?: number;
+      brakeBias?: number;
+    };
+    dampers?: {
+      bumpSlow?: [number, number, number, number];
+      bumpFast?: [number, number, number, number];
+      reboundSlow?: [number, number, number, number];
+      reboundFast?: [number, number, number, number];
+    };
+    aeroBalance?: {
+      rideHeight?: [number, number, number, number];
+      splitter?: number;
+      rearWing?: number;
+      brakeDuct?: [number, number];
+    };
+    drivetrain?: {
+      preload?: number;
+    };
+  };
+}
+
 interface TelemetryContextValue {
   profile: UserProfile | null;
   inputMode: InputMode | null;
@@ -109,6 +189,7 @@ interface TelemetryContextValue {
   setAgentHost: (host: string) => void;
   liveAlert: string | null;
   frame: TelemetryFrame | null;
+  activeSetup: ActiveAccSetup | null;
   trace: TracePoint[];
   drivingErrors: DrivingErrorItem[];
   setups: UserSetupRecord[];
@@ -125,6 +206,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [agentHost, setAgentHost] = useState("localhost");
   const [liveAlert, setLiveAlert] = useState<string | null>(null);
   const [frame, setFrame] = useState<TelemetryFrame | null>(null);
+  const [activeSetup, setActiveSetup] = useState<ActiveAccSetup | null>(null);
   const [trace, setTrace] = useState<TracePoint[]>([]);
   const [drivingErrors, setDrivingErrors] = useState<DrivingErrorItem[]>([]);
   const [setups, setSetups] = useState<UserSetupRecord[]>([]);
@@ -163,8 +245,6 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
       const isAgentRecentlySeen = secSinceSeen < 25;
       setCloudHeartbeatActive(isAgentRecentlySeen);
 
-      // Si el WebSocket local no está entregando tramas directamente (ej. bloqueo HTTPS en navegador),
-      // usamos la telemetría en vivo sincronizada desde el agente a través de Supabase.
       if (!wsActiveRef.current) {
         if (
           isAgentRecentlySeen &&
@@ -173,6 +253,9 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         ) {
           setIsAccLive(true);
           setFrame(prof.live_telemetry.sample as TelemetryFrame);
+          if (prof.live_telemetry.active_setup) {
+            setActiveSetup(prof.live_telemetry.active_setup as ActiveAccSetup);
+          }
           setLiveAlert(prof.live_telemetry.live_alert || null);
           if (
             Array.isArray(prof.live_telemetry.live_trace) &&
@@ -234,11 +317,10 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } catch {
-      // Ignorar errores transitorios de red
+      // Ignorar errores transitorios
     }
   }, []);
 
-  // Sincronización continua cada 1.5s con Supabase
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const hostParam = params.get("agent");
@@ -251,7 +333,6 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [fetchCloudState]);
 
-  // Conexión WebSocket al Agente Local (.exe) cuando el navegador lo permite
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let isUnmounted = false;
@@ -293,6 +374,9 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
             ) {
               setIsAccLive(true);
               setFrame(data.sample);
+              if (data.active_setup) {
+                setActiveSetup(data.active_setup as ActiveAccSetup);
+              }
               setLiveAlert(data.live_alert || null);
 
               if (
@@ -415,6 +499,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         setAgentHost,
         liveAlert,
         frame,
+        activeSetup,
         trace,
         drivingErrors,
         setups,

@@ -151,6 +151,12 @@ class AutoSetupInjector:
         if input_mode in ("keyboard", "gamepad", "wheel"):
             self.input_mode = input_mode
 
+    def get_current_setup(self, car_model: str, track_name: str) -> Dict[str, Any]:
+        key = f"{car_model}:{track_name}:{self.input_mode}"
+        if key not in self.current_setups:
+            self.current_setups[key] = create_base_acc_setup(car_model, self.input_mode)
+        return self.current_setups[key]
+
     def _safe_target_dir(self, car_model: str, track_name: str) -> Path:
         """
         Verifica estrictamente que la ruta destino esté dentro de Setups/<coche>/<pista>
