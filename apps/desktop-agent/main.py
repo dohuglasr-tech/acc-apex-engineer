@@ -18,7 +18,7 @@ import sys
 import threading
 import time
 import tkinter as tk
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 # Mutex único para evitar que dos instancias del agente se ejecuten simultáneamente
 # y hablen con dos voces al mismo tiempo.
