@@ -1,8 +1,8 @@
 """
 ACC Apex Engineer Pro - Ingeniero de Radio Neural (voice_engineer.py)
 Usa síntesis neuronal natural (Microsoft Edge Neural TTS: es-ES-AlvaroNeural)
-reproducida mediante MCI nativo de Windows (winmm.dll) sin abrir reproductores externos.
-Solo transmite mensajes cortos y precisos de ingeniero de pista cuando ACC está activo.
+con respaldo instantáneo local SAPI/pyttsx3 sin latencia.
+Solo transmite mensajes de ingeniero de pista cuando el coche está en pista en ACC.
 """
 
 from __future__ import annotations
@@ -46,20 +46,32 @@ def _play_mp3_winmm(file_path: Path) -> None:
 class VoiceEngineer:
     """
     Ingeniero de pista por radio con voz neuronal humana (es-ES-AlvaroNeural).
-    Frases concisas estilo F1/GT3; nunca habla si el juego no está en sesión activa.
+    Frases concisas y amigables estilo F1/GT3.
     """
 
     def __init__(self, enabled: bool = True) -> None:
         self.enabled = enabled
-        self._queue: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=8)
+        self._queue: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=10)
+        self.is_speaking = False
+        self.last_spoken_text = ""
+        self.last_spoken_ts = 0.0
         self._thread = threading.Thread(
             target=self._worker, daemon=True, name="VoiceEngineerThread"
         )
         self._thread.start()
 
-    def speak(self, message: str) -> None:
+    def speak(self, message: str, priority: bool = False) -> None:
         if not self.enabled or not message:
             return
+
+        # Si es un mensaje prioritario (ej. anticipación de frenada), descartamos mensajes obsoletos
+        if priority:
+            while not self._queue.empty():
+                try:
+                    self._queue.get_nowait()
+                except Exception:
+                    break
+
         try:
             self._queue.put_nowait(message)
         except queue.Full:
@@ -101,10 +113,10 @@ class VoiceEngineer:
             communicate = edge_tts.Communicate(
                 text=text,
                 voice="es-ES-AlvaroNeural",
-                rate="+5%",
+                rate="+6%",
                 pitch="-2Hz",
             )
-            await communicate.save(str(out_path))
+            await asyncio.wait_for(communicate.save(str(out_path)), timeout=2.2)
             return out_path.exists() and out_path.stat().st_size > 256
         except Exception:
             return False
@@ -118,11 +130,16 @@ class VoiceEngineer:
             text = self._queue.get()
             if text is None:
                 break
-            if not self.enabled:
+            if not self.enabled or not text.strip():
                 continue
+
+            self.is_speaking = True
+            self.last_spoken_text = text
+            self.last_spoken_ts = time.time()
 
             mp3_file = tmp_dir / f"radio_{int(time.time() * 1000)}.mp3"
             played_neural = False
+
             if edge_tts is not None:
                 try:
                     played_neural = asyncio.run(self._synthesize_neural(text, mp3_file))
@@ -141,12 +158,14 @@ class VoiceEngineer:
                 try:
                     if fallback_engine is None:
                         fallback_engine = pyttsx3.init()
-                        fallback_engine.setProperty("rate", 178)
-                        fallback_engine.setProperty("volume", 0.9)
+                        fallback_engine.setProperty("rate", 185)
+                        fallback_engine.setProperty("volume", 0.95)
                     fallback_engine.say(text)
                     fallback_engine.runAndWait()
                 except Exception:
                     pass
+
+            self.is_speaking = False
 
     def stop(self) -> None:
         try:

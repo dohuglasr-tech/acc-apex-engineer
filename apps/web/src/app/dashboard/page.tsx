@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { InputMode, useTelemetry } from "@/lib/telemetry-store";
 import { LiveMoTeCGauges } from "@/components/LiveMoTeCGauges";
+import { LocalAIEngineerLiveRadar } from "@/components/LocalAIEngineerLiveRadar";
 import { LapTelemetryChart } from "@/components/LapTelemetryChart";
 import { QRMobileConnect } from "@/components/QRMobileConnect";
 
@@ -285,6 +286,9 @@ export default function DashboardPage() {
           </span>
         </div>
       )}
+
+      {/* Ingeniero de Carrera IA Local - Radar de Curva y Transmisión de Radio */}
+      <LocalAIEngineerLiveRadar />
 
       <LiveMoTeCGauges frame={frame} />
 

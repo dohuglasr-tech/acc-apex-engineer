@@ -19,6 +19,7 @@ import requests
 import websockets
 
 from auto_setup_injector import AutoSetupInjector
+from local_ai_engineer import LocalAIEngineer
 from overlay_hud import OverlayHUD
 from shm_reader import ACCSharedMemoryReader, TelemetrySample
 from telemetry_analyzer import CompletedLapAnalysis, TelemetryLapAnalyzer
@@ -208,6 +209,7 @@ class ApexDesktopAgentApp:
         self.analyzer = TelemetryLapAnalyzer(input_mode=initial_mode)
         self.injector = AutoSetupInjector(input_mode=initial_mode)
         self.voice = VoiceEngineer(enabled=bool(self.config.get("voice_enabled", True)))
+        self.ai_engineer = LocalAIEngineer(voice_engine=self.voice, input_mode=initial_mode)
         self.cloud_sync = SupabaseCloudSync(self.config)
 
         self.latest_sample: Optional[TelemetrySample] = None
@@ -245,6 +247,7 @@ class ApexDesktopAgentApp:
         mode = updated_cfg.get("input_mode") or "gamepad"
         self.analyzer.set_input_mode(mode)
         self.injector.set_input_mode(mode)
+        self.ai_engineer.set_input_mode(mode)
         self.hud.set_input_mode(mode)
         self.voice.enabled = bool(updated_cfg.get("voice_enabled", True))
         self.cloud_sync.update_config(updated_cfg)
@@ -271,6 +274,7 @@ class ApexDesktopAgentApp:
             sample = self.shm_reader.read_sample()
             self.latest_sample = sample
             if sample is not None and sample.is_live_acc:
+                self.ai_engineer.process_sample(sample)
                 completed_lap = self.analyzer.process_sample(sample)
                 if completed_lap is not None:
                     self._handle_completed_lap(completed_lap)
@@ -366,6 +370,7 @@ class ApexDesktopAgentApp:
                     "live_alert": self.analyzer.live_alert,
                     "live_trace": self.analyzer.live_trace,
                     "live_errors": self.analyzer.live_errors,
+                    "engineer_state": self.ai_engineer.get_state(),
                 }
             self.cloud_sync.push_live_state_async(is_live, mode, live_payload)
 
@@ -411,6 +416,7 @@ class ApexDesktopAgentApp:
                                 ),
                                 "live_trace": self.analyzer.live_trace,
                                 "live_errors": self.analyzer.live_errors,
+                                "engineer_state": self.ai_engineer.get_state(),
                                 "latest_setup": self.latest_setup_event,
                                 "latest_lap": self.latest_lap_event,
                             }

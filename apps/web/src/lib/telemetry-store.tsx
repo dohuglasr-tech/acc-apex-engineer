@@ -179,6 +179,69 @@ export interface ActiveAccSetup {
   };
 }
 
+export interface UpcomingCornerInfo {
+  id: string;
+  name: string;
+  distance_m: number;
+  seconds_away: number;
+  gear: number;
+  target_speed_kmh: number;
+  braking_marker: string;
+  braking_type: string;
+  anticipation_msg: string;
+  racing_line_notes: string;
+  exit_technique: string;
+}
+
+export interface LastCornerAnalysis {
+  corner_id: string;
+  corner_name: string;
+  score: number;
+  verdict: string;
+  apex_speed_kmh: number;
+  target_speed_kmh: number;
+  speed_delta_kmh: number;
+  trail_braking: string;
+}
+
+export interface RadioTransmission {
+  text: string;
+  category: string;
+  timestamp: number;
+  time_str: string;
+  is_active: boolean;
+}
+
+export interface RecentRadioCall {
+  text: string;
+  category: string;
+  timestamp: number;
+  time_str: string;
+}
+
+export interface TrackInfo {
+  track_id: string;
+  display_name: string;
+  country: string;
+  length_m: number;
+  total_corners: number;
+}
+
+export interface EngineerState {
+  engineer_name: string;
+  status: "transmitting" | "monitoring" | "standby";
+  upcoming_corner: UpcomingCornerInfo | null;
+  current_corner: {
+    id: string | null;
+    name: string;
+    is_inside: boolean;
+  };
+  last_corner_analysis: LastCornerAnalysis | null;
+  radio_transmission: RadioTransmission;
+  recent_radio_calls: RecentRadioCall[];
+  track_info: TrackInfo | null;
+}
+
 interface TelemetryContextValue {
   profile: UserProfile | null;
   inputMode: InputMode | null;
@@ -190,6 +253,7 @@ interface TelemetryContextValue {
   liveAlert: string | null;
   frame: TelemetryFrame | null;
   activeSetup: ActiveAccSetup | null;
+  engineerState: EngineerState | null;
   trace: TracePoint[];
   drivingErrors: DrivingErrorItem[];
   setups: UserSetupRecord[];
@@ -207,6 +271,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [liveAlert, setLiveAlert] = useState<string | null>(null);
   const [frame, setFrame] = useState<TelemetryFrame | null>(null);
   const [activeSetup, setActiveSetup] = useState<ActiveAccSetup | null>(null);
+  const [engineerState, setEngineerState] = useState<EngineerState | null>(null);
   const [trace, setTrace] = useState<TracePoint[]>([]);
   const [drivingErrors, setDrivingErrors] = useState<DrivingErrorItem[]>([]);
   const [setups, setSetups] = useState<UserSetupRecord[]>([]);
@@ -256,6 +321,9 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
           if (prof.live_telemetry.active_setup) {
             setActiveSetup(prof.live_telemetry.active_setup as ActiveAccSetup);
           }
+          if (prof.live_telemetry.engineer_state) {
+            setEngineerState(prof.live_telemetry.engineer_state as EngineerState);
+          }
           setLiveAlert(prof.live_telemetry.live_alert || null);
           if (
             Array.isArray(prof.live_telemetry.live_trace) &&
@@ -272,6 +340,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         } else {
           setIsAccLive(false);
           setFrame(null);
+          setEngineerState(null);
           setLiveAlert(null);
         }
       }
@@ -363,6 +432,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
             if (data.type === "telemetry_standby" || !data.is_live_acc) {
               setIsAccLive(false);
               setFrame(null);
+              setEngineerState(null);
               setLiveAlert(null);
               return;
             }
@@ -376,6 +446,9 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
               setFrame(data.sample);
               if (data.active_setup) {
                 setActiveSetup(data.active_setup as ActiveAccSetup);
+              }
+              if (data.engineer_state) {
+                setEngineerState(data.engineer_state as EngineerState);
               }
               setLiveAlert(data.live_alert || null);
 
@@ -500,6 +573,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         liveAlert,
         frame,
         activeSetup,
+        engineerState,
         trace,
         drivingErrors,
         setups,
