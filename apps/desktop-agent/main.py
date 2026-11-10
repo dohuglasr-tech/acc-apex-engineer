@@ -226,10 +226,11 @@ class ApexDesktopAgentApp:
         self.config = load_agent_config()
         save_agent_config(self.config)
         initial_mode = self.config.get("input_mode") or "gamepad"
+        initial_style = self.config.get("driving_style") or "safe"
 
         self.shm_reader = ACCSharedMemoryReader()
         self.analyzer = TelemetryLapAnalyzer(input_mode=initial_mode)
-        self.injector = AutoSetupInjector(input_mode=initial_mode)
+        self.injector = AutoSetupInjector(input_mode=initial_mode, driving_style=initial_style)
         self.voice = VoiceEngineer(enabled=bool(self.config.get("voice_enabled", True)))
         gemini_key = self.config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
         self.gemini = GeminiRaceEngineer(api_key=gemini_key)
@@ -276,8 +277,10 @@ class ApexDesktopAgentApp:
 
     def _on_config_applied(self, updated_cfg: Dict[str, Any]) -> None:
         mode = updated_cfg.get("input_mode") or "gamepad"
+        style = updated_cfg.get("driving_style") or "safe"
         self.analyzer.set_input_mode(mode)
         self.injector.set_input_mode(mode)
+        self.injector.set_driving_style(style)
         self.ai_engineer.set_input_mode(mode)
         self.hud.set_input_mode(mode)
         if updated_cfg.get("voice_mode"):
@@ -333,6 +336,8 @@ class ApexDesktopAgentApp:
             air_temp=lap.air_temp,
             road_temp=lap.road_temp,
             best_lap_ms=lap.lap_time_ms,
+            tyre_temps_imo=lap.tyre_temps_imo,
+            curb_strikes=lap.curb_strikes,
         )
 
         self.latest_setup_event = {
@@ -491,6 +496,13 @@ class ApexDesktopAgentApp:
                             save_agent_config(self.config)
                             self.ai_engineer.set_voice_mode(mode)
                             self.hud.set_voice_mode(mode)
+                        elif cmd.get("action") == "set_driving_style" and cmd.get(
+                            "driving_style"
+                        ) in ("aggressive", "safe", "beginner"):
+                            style = cmd["driving_style"]
+                            self.config["driving_style"] = style
+                            save_agent_config(self.config)
+                            self.injector.set_driving_style(style)
                     except Exception:
                         pass
             except Exception:

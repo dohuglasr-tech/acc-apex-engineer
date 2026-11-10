@@ -161,3 +161,4 @@ class GeminiRaceEngineer:
                 f"Comunícalo por radio de forma calmada, profesional y preventiva en 1 frase corta."
             )
         return ""
+

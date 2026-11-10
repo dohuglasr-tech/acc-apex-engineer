@@ -26,6 +26,8 @@ export default function DashboardPage() {
     setInputMode,
     voiceMode,
     setVoiceMode,
+    drivingStyle,
+    setDrivingStyle,
     profile,
     setups,
     drivingErrors,
@@ -44,6 +46,13 @@ export default function DashboardPage() {
       : voiceMode === "car_state"
       ? "ESTADO DEL COCHE"
       : "SOLO TELEMETRÍA";
+
+  const styleLabel =
+    drivingStyle === "aggressive"
+      ? "AGRESIVO"
+      : drivingStyle === "beginner"
+      ? "PRINCIPIANTE"
+      : "SEGURO / CONSISTENTE";
 
   if (!isAccLive || !frame) {
     return (
@@ -179,6 +188,59 @@ export default function DashboardPage() {
                   <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/40 text-emerald-400 text-[10px] uppercase tracking-wider">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                     {voiceModeLabel}
+                  </span>
+                </td>
+              </tr>
+
+              {/* PASO 01-C: ESTILO Y TIPO DE CONDUCCIÓN */}
+              <tr className="hover:bg-zinc-950/60 transition">
+                <td className="py-5 pr-4 font-mono text-zinc-400 align-top">
+                  ESTILO
+                </td>
+                <td className="py-5 px-4 align-top max-w-md">
+                  <div className="font-semibold text-white text-sm">
+                    Estilo de Conducción para el Setup Completo
+                  </div>
+                  <p className="text-zinc-400 mt-1 leading-relaxed">
+                    El agente ajustará el coche entero (Aerodinámica, Amortiguadores, Barras, Diferencial, Electrónica y Frenos) basándose en tu estilo:
+                    <br />
+                    • <strong className="text-white">Agresivo:</strong> frenadas tardías (late-braking), rotación libre con menor precarga diferencial, alerón de velocidad punta y pastillas Sprint.
+                    <br />
+                    • <strong className="text-white">Seguro / Consistente:</strong> mayor carga aerodinámica, diferencial 60-80 Nm, frenada neutra y lineal, desgaste regular de neumáticos.
+                    <br />
+                    • <strong className="text-white">Principiante:</strong> subviraje preventivo ("safe understeer"), barras delanteras rígidas, ABS 5-6, TC 5-6 y altura delantera elevada para evitar trompos.
+                  </p>
+                </td>
+                <td className="py-5 px-4 align-top">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(
+                      [
+                        { id: "aggressive", label: "Agresivo" },
+                        { id: "safe", label: "Seguro / Consistente" },
+                        { id: "beginner", label: "Principiante" },
+                      ] as { id: typeof drivingStyle; label: string }[]
+                    ).map((st) => {
+                      const active = (drivingStyle || "safe") === st.id;
+                      return (
+                        <button
+                          key={st.id}
+                          onClick={() => setDrivingStyle(st.id)}
+                          className={`px-3.5 py-1.5 rounded-full text-xs font-medium border transition ${
+                            active
+                              ? "border-[#E10600] bg-[#E10600]/15 text-white font-bold"
+                              : "border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-white"
+                          }`}
+                        >
+                          {st.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </td>
+                <td className="py-5 pl-4 text-right font-mono align-top">
+                  <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-emerald-500/40 text-emerald-400 text-[10px] uppercase tracking-wider">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    {styleLabel}
                   </span>
                 </td>
               </tr>

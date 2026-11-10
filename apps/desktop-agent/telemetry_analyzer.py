@@ -67,6 +67,8 @@ class CompletedLapAnalysis:
     driving_errors: List[Dict[str, Any]]
     air_temp: float
     road_temp: float
+    tyre_temps_imo: List[List[float]] = None  # type: ignore
+    curb_strikes: int = 0
 
 
 class TelemetryLapAnalyzer:
@@ -223,6 +225,13 @@ class TelemetryLapAnalyzer:
             round(sum(s.tyre_temps_core[i] for s in tail) / len(tail), 1)
             for i in range(4)
         ]
+        imo_temps: List[List[float]] = []
+        for i in range(4):
+            avg_i = round(sum(s.tyre_temps_imo[i][0] for s in tail) / len(tail), 1) if s.tyre_temps_imo else core_temps[i]
+            avg_m = round(sum(s.tyre_temps_imo[i][1] for s in tail) / len(tail), 1) if s.tyre_temps_imo else core_temps[i]
+            avg_o = round(sum(s.tyre_temps_imo[i][2] for s in tail) / len(tail), 1) if s.tyre_temps_imo else core_temps[i]
+            imo_temps.append([avg_i, avg_m, avg_o])
+
         brake_temps_avg = [
             round(sum(s.brake_temps[i] for s in samples) / n, 1)
             for i in range(4)
@@ -230,6 +239,7 @@ class TelemetryLapAnalyzer:
 
         # 2. Conteo de eventos físicos a 333 Hz
         bottoming_events = 0
+        curb_strikes = 0
         oversteer_entry_events = 0
         understeer_samples = 0
         cornering_samples = 0
@@ -241,6 +251,9 @@ class TelemetryLapAnalyzer:
         for idx, s in enumerate(samples):
             if 0 < s.ride_height[0] < 41.5:
                 bottoming_events += 1
+
+            if s.suspension_travel and max(s.suspension_travel) > 0.075:
+                curb_strikes += 1
 
             front_slip = max(s.wheel_slip[0], s.wheel_slip[1])
             rear_slip = max(s.wheel_slip[2], s.wheel_slip[3])
@@ -367,5 +380,7 @@ class TelemetryLapAnalyzer:
             driving_errors=driving_errors,
             air_temp=finish_sample.air_temp,
             road_temp=finish_sample.road_temp,
+            tyre_temps_imo=imo_temps,
+            curb_strikes=curb_strikes,
         )
 

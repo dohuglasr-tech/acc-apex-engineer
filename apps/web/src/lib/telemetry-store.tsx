@@ -12,6 +12,7 @@ import { createClient, isSupabaseConfigured } from "./supabase/client";
 
 export type InputMode = "keyboard" | "gamepad" | "wheel";
 export type VoiceMode = "companion" | "car_state" | "telemetry";
+export type DrivingStyle = "aggressive" | "safe" | "beginner";
 
 export interface TelemetryFrame {
   is_live_acc: boolean;
@@ -251,6 +252,8 @@ interface TelemetryContextValue {
   setInputMode: (mode: InputMode, wheelType?: string) => Promise<void>;
   voiceMode: VoiceMode;
   setVoiceMode: (mode: VoiceMode) => Promise<void>;
+  drivingStyle: DrivingStyle;
+  setDrivingStyle: (style: DrivingStyle) => Promise<void>;
   agentConnected: boolean;
   isAccLive: boolean;
   agentHost: string;
@@ -270,6 +273,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [inputMode, setInputModeState] = useState<InputMode | null>("gamepad");
   const [voiceMode, setVoiceModeState] = useState<VoiceMode>("companion");
+  const [drivingStyle, setDrivingStyleState] = useState<DrivingStyle>("safe");
   const [wsConnected, setWsConnected] = useState(false);
   const [cloudHeartbeatActive, setCloudHeartbeatActive] = useState(false);
   const [isAccLive, setIsAccLive] = useState(false);
@@ -606,6 +610,21 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
     [profile?.agent_token]
   );
 
+  const setDrivingStyle = useCallback(
+    async (style: DrivingStyle) => {
+      setDrivingStyleState(style);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("acc_apex_driving_style", style);
+      }
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({ action: "set_driving_style", driving_style: style })
+        );
+      }
+    },
+    []
+  );
+
   const agentConnected = wsConnected || cloudHeartbeatActive;
 
   return (
@@ -616,6 +635,8 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         setInputMode,
         voiceMode,
         setVoiceMode,
+        drivingStyle,
+        setDrivingStyle,
         agentConnected,
         isAccLive,
         agentHost,

@@ -44,6 +44,8 @@ def load_agent_config() -> Dict[str, Any]:
                 cfg["agent_token"] = DEFAULT_AGENT_TOKEN
             if not cfg.get("input_mode"):
                 cfg["input_mode"] = "gamepad"
+            if not cfg.get("driving_style"):
+                cfg["driving_style"] = "safe"
             if "gemini_api_key" not in cfg:
                 cfg["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
             return cfg
@@ -51,6 +53,7 @@ def load_agent_config() -> Dict[str, Any]:
             pass
     return {
         "input_mode": "gamepad",
+        "driving_style": "safe",
         "wheel_type": "",
         "agent_token": DEFAULT_AGENT_TOKEN,
         "supabase_url": DEFAULT_SUPABASE_URL,
@@ -96,11 +99,12 @@ class InputModeSelectorWindow:
         self.linked_username: str = ""
 
         self.root.title("ACC APEX ENGINEER // AGENTE DE TELEMETRÍA")
-        self.root.geometry("640x740")
+        self.root.geometry("660x880")
         self.root.configure(bg="#08080A")
         self.root.resizable(False, False)
 
         self.selected_mode = tk.StringVar(value=config.get("input_mode") or "gamepad")
+        self.driving_style_var = tk.StringVar(value=config.get("driving_style") or "safe")
         self.wheel_model_var = tk.StringVar(value=config.get("wheel_type") or "")
         self.token_var = tk.StringVar(
             value=config.get("agent_token") or DEFAULT_AGENT_TOKEN
@@ -249,6 +253,61 @@ class InputModeSelectorWindow:
             tk.Label(
                 row,
                 text=desc,
+                fg="#A1A1AA",
+                bg="#121217",
+                font=("Segoe UI", 8),
+            ).pack(anchor="w", padx=22)
+
+        # SECCIÓN 1-B: ESTILO DE CONDUCCIÓN
+        step1b = tk.Frame(self.root, bg="#08080A", padx=20, pady=4)
+        step1b.pack(fill="x")
+
+        tk.Label(
+            step1b,
+            text="01-B / ESTILO Y TIPO DE CONDUCCIÓN DEL PILOTO",
+            fg="#E10600",
+            bg="#08080A",
+            font=("Consolas", 9, "bold"),
+        ).pack(anchor="w", pady=(0, 4))
+
+        styles = [
+            (
+                "aggressive",
+                "AGRESIVO (LATE-BRAKING & MÁXIMA ROTACIÓN)",
+                "Rotación ágil en deceleración, menor precarga diferencial, alerón de velocidad punta, pastillas Sprint.",
+            ),
+            (
+                "safe",
+                "SEGURO / CONSISTENTE (ESTABILIDAD & EQUILIBRIO)",
+                "Mayor carga aerodinámica, diferencial 60-80 Nm, frenada neutra y lineal, desgaste regular de gomas.",
+            ),
+            (
+                "beginner",
+                "PRINCIPIANTE (SUBVIRAJE PREVENTIVO & ASISTENCIAS)",
+                "Anti-trompo activo, estabilizadora delantera firme, ABS 5-6, TC 5-6, altura delantera elevada.",
+            ),
+        ]
+
+        for s_val, s_title, s_desc in styles:
+            s_row = tk.Frame(step1b, bg="#121217", pady=4, padx=12, bd=1, relief="flat")
+            s_row.pack(fill="x", pady=2)
+            s_rb = tk.Radiobutton(
+                s_row,
+                text=s_title,
+                variable=self.driving_style_var,
+                value=s_val,
+                command=self._handle_apply,
+                fg="#FFFFFF",
+                bg="#121217",
+                selectcolor="#08080A",
+                activebackground="#121217",
+                activeforeground="#E10600",
+                font=("Segoe UI", 9, "bold"),
+            )
+            s_rb.pack(anchor="w")
+            tk.Label(
+                s_row,
+                text=s_desc,
                 fg="#A1A1AA",
                 bg="#121217",
                 font=("Segoe UI", 8),
@@ -424,6 +483,7 @@ class InputModeSelectorWindow:
         self.root.update_idletasks()
 
         self.config["input_mode"] = mode
+        self.config["driving_style"] = self.driving_style_var.get().strip() or "safe"
         self.config["wheel_type"] = self.wheel_model_var.get().strip()
         self.config["agent_token"] = (
             self.token_var.get().strip() or DEFAULT_AGENT_TOKEN
