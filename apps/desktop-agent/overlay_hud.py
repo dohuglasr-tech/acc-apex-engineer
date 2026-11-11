@@ -469,6 +469,8 @@ class OverlayHUD:
             self.win.deiconify()
             self._apply_click_through()
             self._visible = True
+            self.win.lift()
+            self.win.attributes("-topmost", True)
 
         self._is_speaking = is_speaking
 
@@ -517,7 +519,8 @@ class OverlayHUD:
             w = sample.tyre_wear or [3.0, 3.0, 3.0, 3.0]
             w_pct = [round(max(0.0, min(100.0, (1.0 - (val / 3.0)) * 100.0))) for val in w]
             avg_w = int(sum(w_pct) / 4.0)
+            wear_color = "#10B981" if avg_w < 15 else ("#F59E0B" if avg_w < 35 else "#EF4444")
             self.lbl_setup.configure(
-                text=f"DESGASTE GOMAS {avg_w}%  |  COMB {sample.fuel:.1f}L  |  BIAS {sample.brake_bias:.1f}%",
-                fg="#D4D4D8",
+                text=f"DESGASTE GOMAS {avg_w}% (DI {w_pct[0]}% · DD {w_pct[1]}% · TI {w_pct[2]}% · TD {w_pct[3]}%) | {sample.fuel:.1f}L",
+                fg=wear_color,
             )

@@ -280,6 +280,8 @@ class ApexDesktopAgentApp:
         key = self.selector_ui.gemini_key_var.get().strip() or self.config.get("gemini_api_key", "")
         if key:
             self.gemini.set_api_key(key)
+            self.config["gemini_api_key"] = key
+            save_agent_config(self.config)
         ok, msg = self.gemini.test_connection()
         if ok and self.voice:
             self.voice.speak(f"Radio comprobada: {msg}", priority=True)
@@ -584,6 +586,10 @@ class ApexDesktopAgentApp:
             pass
         finally:
             self.running = False
+            try:
+                save_agent_config(self.config)
+            except Exception:
+                pass
             self.shm_reader.close()
             self.voice.stop()
 

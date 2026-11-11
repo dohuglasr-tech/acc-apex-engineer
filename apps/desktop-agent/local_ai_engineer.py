@@ -338,14 +338,14 @@ class LocalAIEngineer:
         wear_pcts = [round(max(0.0, min(100.0, (1.0 - (val / 3.0)) * 100.0))) for val in w]
         avg_wear = int(sum(wear_pcts) / 4.0)
         avg_life = max(0, 100 - avg_wear)
-        current_bracket = avg_wear // 5  # Cambios notables cada 5% de desgaste
+        current_bracket = avg_wear // 4  # Cambios notables cada 4% de desgaste
 
         time_elapsed = now - self._last_tyre_wear_call_ts
         lap_changed = (sample.completed_laps > self._last_spoken_tyre_lap and sample.completed_laps > 0)
-        bracket_changed = (self._last_wear_bracket != -1 and current_bracket > self._last_wear_bracket and avg_wear >= 5)
+        bracket_changed = (self._last_wear_bracket != -1 and current_bracket > self._last_wear_bracket and avg_wear >= 4)
 
-        # Disparo: cada 42 segundos en recta, al cambiar de vuelta, o cuando el desgaste sube 5%
-        if time_elapsed < 42.0 and not lap_changed and not bracket_changed:
+        # Disparo: cada 30 segundos en recta, al cambiar de vuelta, o cuando el desgaste sube 4%
+        if time_elapsed < 30.0 and not lap_changed and not bracket_changed:
             return
 
         front_wear = int((wear_pcts[0] + wear_pcts[1]) / 2.0)

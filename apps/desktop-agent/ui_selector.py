@@ -117,6 +117,13 @@ class InputModeSelectorWindow:
             value=config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
         )
 
+        # Auto-guardado instantáneo de Token y Gemini Key en cada pulsación o pegado
+        self.token_var.trace_add("write", self._on_field_auto_save)
+        self.gemini_key_var.trace_add("write", self._on_field_auto_save)
+
+        # Protocolo de cierre de ventana para asegurar que todo quede guardado en disco
+        self.root.protocol("WM_DELETE_WINDOW", self._on_window_close)
+
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -328,7 +335,7 @@ class InputModeSelectorWindow:
             font=("Consolas", 9, "bold"),
         ).pack(anchor="w", pady=(0, 4))
 
-        tk.Entry(
+        self.entry_token = tk.Entry(
             step2,
             textvariable=self.token_var,
             bg="#121217",
@@ -336,7 +343,10 @@ class InputModeSelectorWindow:
             insertbackground="#FFFFFF",
             relief="flat",
             font=("Consolas", 10),
-        ).pack(fill="x", ipady=5, pady=(0, 6))
+        )
+        self.entry_token.pack(fill="x", ipady=5, pady=(0, 6))
+        self.entry_token.bind("<Return>", lambda e: self._handle_apply())
+        self.entry_token.bind("<FocusOut>", lambda e: self._handle_apply())
 
         tk.Checkbutton(
             step2,
@@ -373,7 +383,7 @@ class InputModeSelectorWindow:
             font=("Consolas", 8),
         ).pack(side="left", padx=6)
 
-        tk.Entry(
+        self.entry_gemini = tk.Entry(
             step3,
             textvariable=self.gemini_key_var,
             bg="#121217",
@@ -382,7 +392,10 @@ class InputModeSelectorWindow:
             relief="flat",
             font=("Consolas", 9),
             show="*",
-        ).pack(fill="x", ipady=4, pady=(2, 2))
+        )
+        self.entry_gemini.pack(fill="x", ipady=4, pady=(2, 2))
+        self.entry_gemini.bind("<Return>", lambda e: self._handle_test_gemini())
+        self.entry_gemini.bind("<FocusOut>", lambda e: self._handle_apply())
 
         gemini_test_row = tk.Frame(step3, bg="#08080A")
         gemini_test_row.pack(fill="x", pady=(4, 2))
@@ -449,9 +462,46 @@ class InputModeSelectorWindow:
         )
         self.lbl_status.pack(anchor="w", padx=20, pady=(2, 4))
 
+    def _on_field_auto_save(self, *args: Any) -> None:
+        """Guarda inmediatamente en disco cualquier cambio en Token o Gemini Key."""
+        token = self.token_var.get().strip()
+        key = self.gemini_key_var.get().strip()
+        if token:
+            self.config["agent_token"] = token
+        self.config["gemini_api_key"] = key
+        save_agent_config(self.config)
+
+        if hasattr(self, "lbl_gemini_status"):
+            if key:
+                self.lbl_gemini_status.configure(
+                    text="● GOOGLE GEMINI LISTO PARA CONECTAR", fg="#10B981"
+                )
+            else:
+                self.lbl_gemini_status.configure(
+                    text="○ MOTOR ANALÍTICO LOCAL (SIN CLAVE)", fg="#71717A"
+                )
+
+    def _on_window_close(self) -> None:
+        """Asegura que todos los valores se guarden en disco al cerrar la ventana con la X."""
+        try:
+            self.config["agent_token"] = self.token_var.get().strip() or DEFAULT_AGENT_TOKEN
+            self.config["gemini_api_key"] = self.gemini_key_var.get().strip()
+            self.config["input_mode"] = self.selected_mode.get().strip() or "gamepad"
+            self.config["driving_style"] = self.driving_style_var.get().strip() or "safe"
+            self.config["voice_enabled"] = bool(self.voice_var.get())
+            save_agent_config(self.config)
+        except Exception:
+            pass
+        self.root.destroy()
+
     def _handle_test_gemini(self) -> None:
         if not self.on_test_gemini:
             return
+
+        # Persistir la API key en disco antes de probar
+        key = self.gemini_key_var.get().strip()
+        self.config["gemini_api_key"] = key
+        save_agent_config(self.config)
 
         self.btn_test_gemini.configure(text="CONECTANDO A GEMINI...", bg="#52525B")
         self.lbl_gemini_status.configure(text="Conectando con Google GenAI...", fg="#F59E0B")
