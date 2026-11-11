@@ -565,6 +565,17 @@ class ACCSharedMemoryReader:
             tyres_out = max(0, min(4, int(phys.numberOfTyresOut)))
             is_off_track = tyres_out >= 3
 
+            # Filtrado estricto de tiempos de vuelta válidos de ACC
+            # Kunos ACC inicializa iBestTime e iLastTime en 2147483647 (INT32_MAX) cuando no hay vueltas
+            raw_best = int(gfx.iBestTime) if gfx else 0
+            valid_best = raw_best if (45000 <= raw_best < 1800000) else 0
+
+            raw_last = int(gfx.iLastTime) if gfx else 0
+            valid_last = raw_last if (45000 <= raw_last < 1800000) else 0
+
+            raw_curr = int(gfx.iCurrentTime) if gfx else 0
+            valid_curr = raw_curr if (0 <= raw_curr < 1800000) else 0
+
             return TelemetrySample(
                 timestamp=now,
                 is_live_acc=True,
@@ -573,9 +584,9 @@ class ACCSharedMemoryReader:
                 track_name=track_name,
                 driver_name=driver_name,
                 completed_laps=int(gfx.completedLaps) if gfx else 0,
-                current_lap_ms=max(0, int(gfx.iCurrentTime)) if gfx else 0,
-                last_lap_ms=max(0, int(gfx.iLastTime)) if gfx else 0,
-                best_lap_ms=max(0, int(gfx.iBestTime)) if gfx else 0,
+                current_lap_ms=valid_curr,
+                last_lap_ms=valid_last,
+                best_lap_ms=valid_best,
                 sector_index=int(gfx.currentSectorIndex) if gfx else 0,
                 last_sector_ms=max(0, int(gfx.lastSectorTime)) if gfx else 0,
                 normalized_pos=max(

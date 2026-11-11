@@ -15,7 +15,15 @@ import { AccSetupEngineerBay } from "@/components/AccSetupEngineerBay";
 import { QRMobileConnect } from "@/components/QRMobileConnect";
 
 function formatLapTime(ms: number): string {
-  if (!ms || ms <= 0) return "--:--.---";
+  // Ignora tiempos no válidos o el valor 2147483647 de Kunos ACC
+  if (!ms || ms <= 45000 || ms >= 1800000) return "--:--.---";
+  const min = Math.floor(ms / 60000);
+  const sec = ((ms % 60000) / 1000).toFixed(3);
+  return `${min}:${Number(sec) < 10 ? "0" : ""}${sec}`;
+}
+
+function formatCurrentLap(ms: number): string {
+  if (!ms || ms <= 0 || ms >= 1800000) return "--:--.---";
   const min = Math.floor(ms / 60000);
   const sec = ((ms % 60000) / 1000).toFixed(3);
   return `${min}:${Number(sec) < 10 ? "0" : ""}${sec}`;
@@ -42,10 +50,82 @@ export default function DashboardPage() {
     profile,
     setups,
     drivingErrors,
+    trackRecords,
   } = useTelemetry();
 
   const [activeTab, setActiveTab] = useState<DashboardTab>("cockpit");
   const [tokenCopied, setTokenCopied] = useState(false);
+
+  // Circuito actual detectado
+  const rawTrack = (frame?.track_name || "").toLowerCase().trim();
+  const cleanTrack = rawTrack.replace(/[\s\-_]/g, "");
+
+  // 1. Mejor vuelta histórica guardada del usuario en esta pista
+  let historicalBestMs = 0;
+  if (cleanTrack) {
+    // A. Buscar en trackRecords sincronizado de la base de datos Supabase
+    for (const [tName, bMs] of Object.entries(trackRecords || {})) {
+      const c = tName.toLowerCase().replace(/[\s\-_]/g, "");
+      if (c.includes(cleanTrack) || cleanTrack.includes(c)) {
+        if (bMs > 45000 && bMs < 1800000 && (historicalBestMs === 0 || bMs < historicalBestMs)) {
+          historicalBestMs = bMs;
+        }
+      }
+    }
+
+    // B. Buscar en los setups guardados del usuario para esta pista
+    for (const s of setups) {
+      const c = (s.track_name || "").toLowerCase().replace(/[\s\-_]/g, "");
+      if (c.includes(cleanTrack) || cleanTrack.includes(c)) {
+        if (s.best_lap_ms > 45000 && s.best_lap_ms < 1800000) {
+          if (historicalBestMs === 0 || s.best_lap_ms < historicalBestMs) {
+            historicalBestMs = s.best_lap_ms;
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Mejor vuelta válida de la sesión actual (descartando el 2147483647 de Kunos ACC)
+  const sessionBestMs =
+    frame?.best_lap_ms && frame.best_lap_ms > 45000 && frame.best_lap_ms < 1800000
+      ? frame.best_lap_ms
+      : 0;
+
+  // El récord personal es el mejor entre el histórico de la pista y la sesión actual
+  const personalBestMs =
+    sessionBestMs > 0 && historicalBestMs > 0
+      ? Math.min(sessionBestMs, historicalBestMs)
+      : sessionBestMs > 0
+      ? sessionBestMs
+      : historicalBestMs;
+
+  // Delta vs el récord personal
+  let deltaText = "HISTÓRICO EN PISTA";
+  let deltaColor = "text-zinc-500";
+  if (personalBestMs > 0) {
+    if (frame?.last_lap_ms && frame.last_lap_ms > 45000 && frame.last_lap_ms < 1800000) {
+      const diff = frame.last_lap_ms - personalBestMs;
+      const diffSec = diff / 1000.0;
+      if (diff <= 0) {
+        deltaText = `¡NUEVO RÉCORD! (${diffSec.toFixed(2)}s)`;
+        deltaColor = "text-emerald-400 font-bold";
+      } else {
+        deltaText = `ÚLTIMA VTA: +${diffSec.toFixed(2)}s`;
+        deltaColor = "text-amber-400";
+      }
+    } else if (historicalBestMs > 0 && sessionBestMs > 0 && sessionBestMs < historicalBestMs) {
+      deltaText = "MEJORANDO RÉCORD HISTÓRICO";
+      deltaColor = "text-emerald-400 font-bold";
+    } else {
+      const trackDisp = (frame?.track_name || "PISTA").toUpperCase();
+      deltaText = `RÉCORD EN ${trackDisp}`;
+      deltaColor = "text-emerald-500/80";
+    }
+  } else {
+    deltaText = "SIN REGISTRO PREVIO";
+    deltaColor = "text-zinc-500";
+  }
 
   const modeLabel =
     inputMode === "keyboard"
@@ -268,7 +348,7 @@ export default function DashboardPage() {
             VUELTA ACTUAL (#{frame ? frame.completed_laps + 1 : 1})
           </div>
           <div className="text-xl sm:text-2xl font-bold font-mono text-white mt-1">
-            {formatLapTime(frame?.current_lap_ms || 0)}
+            {formatCurrentLap(frame?.current_lap_ms || 0)}
           </div>
           <div className="text-[10px] font-mono text-zinc-500 mt-0.5">
             SECTOR {frame ? frame.sector_index + 1 : 1}
@@ -288,17 +368,17 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* MEJOR VUELTA PERSONAL */}
+        {/* MEJOR VUELTA PERSONAL (HISTÓRICO EN ESTA PISTA) */}
         <div className="bg-[#0C0C12] border border-zinc-800/90 rounded-xl p-3.5 shadow-md">
           <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-emerald-400 flex items-center justify-between">
             <span>RÉCORD PERSONAL</span>
             <span className="text-xs">⚡</span>
           </div>
           <div className="text-xl sm:text-2xl font-bold font-mono text-emerald-400 mt-1">
-            {formatLapTime(frame?.best_lap_ms || 0)}
+            {formatLapTime(personalBestMs)}
           </div>
-          <div className="text-[10px] font-mono text-emerald-500/80 mt-0.5">
-            DELTA EN VIVO: {frame?.is_live_acc ? "-0.18s" : "0.00s"}
+          <div className={`text-[10px] font-mono mt-0.5 ${deltaColor}`}>
+            {deltaText}
           </div>
         </div>
 

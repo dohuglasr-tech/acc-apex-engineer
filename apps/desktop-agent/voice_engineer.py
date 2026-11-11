@@ -27,10 +27,6 @@ try:
 except ImportError:
     edge_tts = None
 
-try:
-    from gtts import gTTS
-except ImportError:
-    gTTS = None
 
 
 def sanitize_spanish_for_speech(text: str) -> str:
@@ -296,7 +292,7 @@ class VoiceEngineer:
         self.speak(speech_text, priority=True)
 
     async def _synthesize_edge_neural(self, text: str, out_path: Path) -> bool:
-        """Síntesis con Microsoft Edge Neural TTS en español fluido, rápido y natural."""
+        """Síntesis exclusiva con Microsoft Edge Neural TTS en español Álvaro (voz masculina deportiva a +22%)."""
         if edge_tts is None:
             return False
         try:
@@ -306,19 +302,8 @@ class VoiceEngineer:
                 rate=self.speech_rate,
                 pitch="+0Hz",
             )
-            # Timeout reducido a 1.8s para evitar que el ingeniero se quede pegado si hay lag de red
-            await asyncio.wait_for(communicate.save(str(out_path)), timeout=1.8)
-            return out_path.exists() and out_path.stat().st_size > 256
-        except Exception:
-            return False
-
-    def _synthesize_gtts(self, text: str, out_path: Path) -> bool:
-        """Síntesis de respaldo con Google Text-to-Speech en español nativo."""
-        if gTTS is None:
-            return False
-        try:
-            tts = gTTS(text=text, lang="es", tld="es")
-            tts.save(str(out_path))
+            # Timeout generoso de 6.0s para permitir frases largas completas sin abortar a Álvaro
+            await asyncio.wait_for(communicate.save(str(out_path)), timeout=6.0)
             return out_path.exists() and out_path.stat().st_size > 256
         except Exception:
             return False
@@ -327,7 +312,7 @@ class VoiceEngineer:
         """Devuelve una ruta en caché basada en el hash del texto, voz y cadencia."""
         cache_key = f"{self.voice_name}_{self.speech_rate}_{text.strip()}"
         h = hashlib.md5(cache_key.encode("utf-8")).hexdigest()
-        return self.cache_dir / f"voice_{h}.mp3"
+        return self.cache_dir / f"alvaro_{h}.mp3"
 
     def _worker(self) -> None:
         while True:
@@ -344,27 +329,18 @@ class VoiceEngineer:
             cached_mp3 = self._get_cache_path(text)
             played = False
 
-            # 1. Si ya está en caché, reproducir de inmediato (cero latencia) con volumen configurado
+            # 1. Si ya está en caché con voz de Álvaro, reproducir de inmediato (cero latencia)
             if cached_mp3.exists() and cached_mp3.stat().st_size > 256:
                 try:
                     played = _play_mp3_winmm(cached_mp3, volume=self.volume)
                 except Exception:
                     played = False
 
-            # 2. Si no estaba en caché, sintetizar con Microsoft Edge Neural TTS
+            # 2. Si no estaba en caché, sintetizar con Microsoft Edge Neural TTS (Álvaro)
             if not played:
                 try:
                     ok_neural = asyncio.run(self._synthesize_edge_neural(text, cached_mp3))
                     if ok_neural:
-                        played = _play_mp3_winmm(cached_mp3, volume=self.volume)
-                except Exception:
-                    played = False
-
-            # 3. Si Edge Neural falló, usar Google TTS en español nativo (0.5s de síntesis)
-            if not played:
-                try:
-                    ok_gtts = self._synthesize_gtts(text, cached_mp3)
-                    if ok_gtts:
                         played = _play_mp3_winmm(cached_mp3, volume=self.volume)
                 except Exception:
                     played = False

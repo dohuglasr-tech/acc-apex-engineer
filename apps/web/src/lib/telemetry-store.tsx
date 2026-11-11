@@ -275,6 +275,7 @@ interface TelemetryContextValue {
   trace: TracePoint[];
   drivingErrors: DrivingErrorItem[];
   setups: UserSetupRecord[];
+  trackRecords: Record<string, number>;
 }
 
 const TelemetryContext = createContext<TelemetryContextValue | null>(null);
@@ -293,6 +294,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [liveAlert, setLiveAlert] = useState<string | null>(null);
   const [frame, setFrame] = useState<TelemetryFrame | null>(null);
   const [activeSetup, setActiveSetup] = useState<ActiveAccSetup | null>(null);
+  const [trackRecords, setTrackRecords] = useState<Record<string, number>>({});
   const [engineerState, setEngineerState] = useState<EngineerState | null>(null);
   const [trace, setTrace] = useState<TracePoint[]>([]);
   const [drivingErrors, setDrivingErrors] = useState<DrivingErrorItem[]>([]);
@@ -445,6 +447,10 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
             setup_json: (s.setup_json as Record<string, unknown>) || {},
           }))
         );
+      }
+
+      if (state.track_records && typeof state.track_records === "object") {
+        setTrackRecords(state.track_records);
       }
 
       if (state.last_lap) {
@@ -728,6 +734,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         trace,
         drivingErrors,
         setups,
+        trackRecords,
       }}
     >
       {children}
