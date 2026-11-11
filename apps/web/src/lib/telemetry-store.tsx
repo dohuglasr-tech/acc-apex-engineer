@@ -64,6 +64,13 @@ export interface TelemetryFrame {
   air_temp: number;
   road_temp: number;
   brake_bias: number;
+  tyres_out?: number;
+  is_off_track?: boolean;
+  aid_fuel_rate?: number;
+  aid_tire_rate?: number;
+  aid_mechanical_damage?: number;
+  has_assists_active?: boolean;
+  active_assists_list?: string[];
 }
 
 export interface DrivingErrorItem {

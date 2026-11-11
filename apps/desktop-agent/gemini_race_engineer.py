@@ -203,7 +203,8 @@ class GeminiRaceEngineer:
             return (
                 f"El piloto va a {int(speed)} km/h aproximándose a {corner} en {track} (a {dist} metros). "
                 f"Referencia de frenada: {marker}, marcha: {gear}ª. Conduce con: {ctx.get('input_mode', 'mando')}. "
-                f"Cántale la curva por radio con 1 sola orden breve, urgente y natural (máximo 12 palabras)."
+                f"REGLA OBLIGATORIA: Tu frase DEBE comenzar estrictamente con 'En la siguiente curva, {corner}, ...'. "
+                f"Cántale la curva por radio con 1 sola orden breve, urgente y natural (máximo 14 palabras)."
             )
         elif event_type == "corner_exit":
             score = ctx.get("score", 85)

@@ -277,6 +277,8 @@ class TelemetrySample:
     session_time_left: float = 0.0
     session_laps: int = 0
     max_fuel: float = 120.0
+    tyres_out: int = 0
+    is_off_track: bool = False
     aid_fuel_rate: float = 1.0
     aid_tire_rate: float = 1.0
     aid_mechanical_damage: float = 1.0
@@ -343,6 +345,8 @@ class TelemetrySample:
             "session_time_left": round(self.session_time_left, 1),
             "session_laps": self.session_laps,
             "max_fuel": round(self.max_fuel, 1),
+            "tyres_out": self.tyres_out,
+            "is_off_track": self.is_off_track,
             "aid_fuel_rate": round(self.aid_fuel_rate, 2),
             "aid_tire_rate": round(self.aid_tire_rate, 2),
             "aid_mechanical_damage": round(self.aid_mechanical_damage, 2),
@@ -556,6 +560,11 @@ class ACCSharedMemoryReader:
             raw_compound = ((gfx.tyreCompound if gfx else "") or "").strip().lower()
             compound_label = "MOJADO" if "wet" in raw_compound else "SECO"
 
+            # Detección física precisa de límites de pista y ruedas fuera del trazado
+            # 0 = en pista, 1-2 = pianos/límites legales, 3 = superación de límites, 4 = fuera de pista total
+            tyres_out = max(0, min(4, int(phys.numberOfTyresOut)))
+            is_off_track = tyres_out >= 3
+
             return TelemetrySample(
                 timestamp=now,
                 is_live_acc=True,
@@ -614,6 +623,8 @@ class ACCSharedMemoryReader:
                 session_time_left=float(gfx.sessionTimeLeft) if gfx else 0.0,
                 session_laps=int(gfx.numberOfLaps) if gfx else 0,
                 max_fuel=float(stc.maxFuel) if (stc and stc.maxFuel > 10.0) else 120.0,
+                tyres_out=tyres_out,
+                is_off_track=is_off_track,
                 aid_fuel_rate=aid_fuel,
                 aid_tire_rate=aid_tire,
                 aid_mechanical_damage=aid_damage,

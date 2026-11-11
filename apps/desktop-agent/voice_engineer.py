@@ -93,6 +93,26 @@ def sanitize_spanish_for_speech(text: str) -> str:
     return t.strip()
 
 
+_ACTIVE_MCI_ALIAS: Optional[str] = None
+_ACTIVE_MCI_LOCK = threading.Lock()
+
+
+def stop_current_playback() -> None:
+    """Interrumpe de inmediato cualquier reproducción de audio en curso para liberar el canal de radio."""
+    global _ACTIVE_MCI_ALIAS
+    with _ACTIVE_MCI_LOCK:
+        if _ACTIVE_MCI_ALIAS:
+            try:
+                winmm = ctypes.windll.winmm
+                buf = ctypes.create_unicode_buffer(256)
+                winmm.mciSendStringW(f"stop {_ACTIVE_MCI_ALIAS}", buf, 255, 0)
+                winmm.mciSendStringW(f"close {_ACTIVE_MCI_ALIAS}", buf, 255, 0)
+            except Exception:
+                pass
+            finally:
+                _ACTIVE_MCI_ALIAS = None
+
+
 def _play_mp3_winmm(file_path: Path, volume: int = 65) -> bool:
     """Reproduce un archivo MP3 usando la API multimedia nativa de Windows con control de volumen (0 a 100%)."""
     if not file_path.exists() or file_path.stat().st_size < 100:
@@ -101,6 +121,7 @@ def _play_mp3_winmm(file_path: Path, volume: int = 65) -> bool:
     if volume <= 0:
         return True  # Silenciado intencionalmente
 
+    global _ACTIVE_MCI_ALIAS
     alias = f"apex_rad_{int(time.time() * 1000)}"
     winmm = ctypes.windll.winmm
     buf = ctypes.create_unicode_buffer(256)
@@ -111,15 +132,21 @@ def _play_mp3_winmm(file_path: Path, volume: int = 65) -> bool:
     if ret != 0:
         return False
 
+    with _ACTIVE_MCI_LOCK:
+        _ACTIVE_MCI_ALIAS = alias
+
     try:
         # Ajustar volumen en MCI (0 a 1000)
         vol_mci = max(0, min(1000, int(volume * 10)))
         winmm.mciSendStringW(f"setaudio {alias} volume to {vol_mci}", buf, 255, 0)
 
-        # Reproducir de forma síncrona
+        # Reproducir de forma síncrona con capacidad de interrupción externa
         ret_play = winmm.mciSendStringW(f"play {alias} wait", buf, 255, 0)
         return ret_play == 0
     finally:
+        with _ACTIVE_MCI_LOCK:
+            if _ACTIVE_MCI_ALIAS == alias:
+                _ACTIVE_MCI_ALIAS = None
         winmm.mciSendStringW(f"close {alias}", buf, 255, 0)
 
 
@@ -143,6 +170,8 @@ class VoiceEngineer:
         self.is_speaking = False
         self.last_spoken_text = ""
         self.last_spoken_ts = 0.0
+        # Historial para filtro anti-repetición en tiempo real (evita frases idénticas en 40s)
+        self._recent_history: List[Tuple[str, float]] = []
 
         # Directorio de caché persistente de audios sintetizados
         self.cache_dir = Path(tempfile.gettempdir()) / "acc_apex_radio_cache"
@@ -162,6 +191,10 @@ class VoiceEngineer:
         if voice_name:
             self.voice_name = voice_name
 
+    def stop_playback(self) -> None:
+        """Detiene de inmediato la locución actual por radio."""
+        stop_current_playback()
+
     def purge_pending(self) -> None:
         """Descarta de inmediato mensajes encolados para no emitir avisos desfasados de curvas pasadas."""
         while not self._queue.empty():
@@ -169,6 +202,7 @@ class VoiceEngineer:
                 self._queue.get_nowait()
             except Exception:
                 break
+        stop_current_playback()
 
     def speak(self, message: str, priority: bool = False) -> None:
         if not self.enabled or not message or not message.strip():
@@ -178,7 +212,19 @@ class VoiceEngineer:
         if not clean_text:
             return
 
-        # Limpiar mensajes anteriores si es una instrucción prioritaria de frenada
+        now = time.time()
+
+        # Filtro inteligente anti-repetición:
+        # Si un mensaje no prioritario ya fue emitido en los últimos 38 segundos, se descarta para no cansar al piloto
+        if not priority:
+            self._recent_history = [(t, ts) for (t, ts) in self._recent_history if (now - ts) < 38.0]
+            clean_lower = clean_text.lower().strip()
+            for prev_t, prev_ts in self._recent_history:
+                if clean_lower == prev_t.lower().strip():
+                    return
+            self._recent_history.append((clean_text, now))
+
+        # Limpiar mensajes anteriores e interrumpir audio en curso si es prioritario (frenada, off-track)
         if priority:
             self.purge_pending()
 
@@ -198,6 +244,7 @@ class VoiceEngineer:
         input_mode: str = "gamepad",
         road_temp: float = 30.0,
         fuel_used: float = 0.0,
+        remaining_fuel: float = 0.0,
     ) -> None:
         if not self.enabled or lap_time_ms <= 0:
             return
@@ -213,12 +260,6 @@ class VoiceEngineer:
             "wheel": "volante",
         }.get(input_mode, "mando")
 
-        # Explicación clara al piloto de F1:
-        # - Vuelta y tiempo registrado
-        # - Consumo de combustible medido en la vuelta
-        # - Creación del setup en garaje en una de las 3 ranuras (APEX_SETUP_1/2/3)
-        # - Adaptado al periférico (mando/volante), temperatura de asfalto y telemetría
-        # - Instrucción para cargarlo al entrar a boxes
         advice = ""
         if primary_error:
             err_lower = primary_error.lower()
@@ -231,9 +272,17 @@ class VoiceEngineer:
 
         slot_label = f"APEX SETUP {slot_num}"
         time_text = f"{minutes} {sec_whole:02d} punto {tenths}" if minutes > 0 else f"{sec_whole:02d} punto {tenths}"
-        fuel_note = f" Consumo: {fuel_used:.1f} litros." if fuel_used > 0.4 else ""
+        
+        # Anuncio preciso y obligatorio de consumo de combustible por vuelta
+        if fuel_used > 0.05:
+            fuel_note = f" Consumo: {fuel_used:.1f} litros por vuelta."
+        else:
+            fuel_note = " Consumo medido bajo control."
+
+        rem_note = f" Nos quedan {remaining_fuel:.0f} litros en el tanque." if remaining_fuel > 1.0 else ""
+
         msg = (
-            f"Vuelta {lap_number}: {time_text}.{fuel_note} "
+            f"Vuelta {lap_number}: {time_text}.{fuel_note}{rem_note} "
             f"He creado el setup {slot_label} en tu garaje, adaptado a tu {input_name} y a los {road_temp:.0f} grados de pista. "
             f"{advice} Cárgalo en boxes cuando entres."
         ).strip()
@@ -257,7 +306,8 @@ class VoiceEngineer:
                 rate=self.speech_rate,
                 pitch="+0Hz",
             )
-            await asyncio.wait_for(communicate.save(str(out_path)), timeout=4.5)
+            # Timeout reducido a 1.8s para evitar que el ingeniero se quede pegado si hay lag de red
+            await asyncio.wait_for(communicate.save(str(out_path)), timeout=1.8)
             return out_path.exists() and out_path.stat().st_size > 256
         except Exception:
             return False

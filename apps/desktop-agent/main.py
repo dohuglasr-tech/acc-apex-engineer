@@ -430,12 +430,15 @@ class ApexDesktopAgentApp:
         }
 
         self.hud.set_setup_status(f"{slot_name}.json en garaje (Boxes)")
+        calc_fuel_lap = lap.fuel_used if lap.fuel_used > 0.4 else self.fuel_calculator.get_avg_fuel(lap.car_model, lap.track_name)
+        remaining_fuel_l = self.latest_sample.fuel if self.latest_sample else 0.0
+
         if self.ai_engineer.voice_mode == "telemetry":
             lap_sec = round(lap.lap_time_ms / 1000.0, 3)
             mins = int(lap_sec // 60)
             secs = int(lap_sec % 60)
             tenths = int(round((lap_sec - int(lap_sec)) * 10))
-            fuel_s = f" Consumo: {lap.fuel_used:.1f} litros." if lap.fuel_used > 0.4 else ""
+            fuel_s = f" Consumo: {calc_fuel_lap:.1f} litros por vuelta."
             if mins > 0:
                 lap_msg = f"Vuelta {lap.lap_number}: {mins} minuto{'s' if mins != 1 else ''}, {secs} segundos y {tenths} décimas.{fuel_s}"
             else:
@@ -475,8 +478,8 @@ class ApexDesktopAgentApp:
 
                 has_assists = bool(getattr(self.latest_sample, "has_assists_active", False)) if self.latest_sample else False
                 assists_desc = ", ".join(getattr(self.latest_sample, "active_assists_list", [])) if self.latest_sample else ""
-                fuel_used_val = lap.fuel_used if getattr(self.latest_sample, "aid_fuel_rate", 1.0) > 0.05 else 0.0
-                avg_fuel_val = avg_fuel_lap if getattr(self.latest_sample, "aid_fuel_rate", 1.0) > 0.05 else 0.0
+                fuel_used_val = calc_fuel_lap
+                avg_fuel_val = avg_fuel_lap
 
                 ctx = {
                     "track_name": lap.track_name,
@@ -507,9 +510,6 @@ class ApexDesktopAgentApp:
 
                 self.gemini.generate_radio_advice_async("lap_summary", ctx, _on_gemini_lap)
             else:
-                fuel_for_announcement = (
-                    lap.fuel_used if getattr(self.latest_sample, "aid_fuel_rate", 1.0) > 0.05 else 0.0
-                )
                 self.voice.announce_lap_and_setup(
                     lap_number=lap.lap_number,
                     lap_time_ms=lap.lap_time_ms,
@@ -519,7 +519,8 @@ class ApexDesktopAgentApp:
                     primary_error=primary_err,
                     input_mode=lap.input_mode,
                     road_temp=lap.road_temp,
-                    fuel_used=fuel_for_announcement,
+                    fuel_used=calc_fuel_lap,
+                    remaining_fuel=remaining_fuel_l,
                 )
         self.cloud_sync.sync_lap_and_setup_async(
             lap=lap,

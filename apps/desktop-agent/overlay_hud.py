@@ -833,7 +833,10 @@ class OverlayHUD:
                 fg=wear_color,
             )
 
-        if live_alert:
+        if getattr(sample, "is_off_track", False) or getattr(sample, "tyres_out", 0) >= 3:
+            t_out = getattr(sample, "tyres_out", 4)
+            self.lbl_setup.configure(text=f"¡FUERA DEL TRAZADO! ({t_out} RUEDAS FUERA)", fg="#E10600")
+        elif live_alert:
             self.lbl_setup.configure(text=f"AVISO: {live_alert}", fg="#E10600")
         elif has_assists:
             self.lbl_setup.configure(text=f"GARAJE: {self.last_setup_label} [TRAZADA]", fg="#38BDF8")

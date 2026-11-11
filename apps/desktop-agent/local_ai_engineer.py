@@ -77,6 +77,15 @@ class LocalAIEngineer:
         self._last_assists_reminder_ts: float = 0.0
         self._last_assists_reminder_lap: int = -1
 
+        # Monitoreo de límites de pista y salidas del trazado (Off-Track)
+        self._is_currently_off_track: bool = False
+        self._last_off_track_alert_ts: float = 0.0
+        self._off_track_start_ts: float = 0.0
+
+        # Monitoreo de coaching preventivo dinámico en carrera
+        self._preventative_coaching_ts: float = 0.0
+        self._recent_tips: List[str] = []
+
         # Datos analíticos
         self.last_corner_result: Optional[Dict[str, Any]] = None
         self.upcoming_corner_data: Optional[Dict[str, Any]] = None
@@ -120,6 +129,9 @@ class LocalAIEngineer:
 
         self._ensure_track(sample.track_name)
         now = time.time()
+
+        # Detección inmediata a 333 Hz de salidas de pista y límites superados
+        self._check_off_track_events(sample, now)
 
         # Saludo de inicio de sesión por radio: inmediato al estar en pista en ACC
         if not self._greeted_session and sample.is_live_acc:
@@ -195,26 +207,20 @@ class LocalAIEngineer:
                 self.last_speech_ts = now
 
                 # Variaciones dinámicas estilo F1 por vuelta para no repetir el mismo texto
+                # REGLA OBLIGATORIA: Toda anticipación DEBE comenzar con "En la siguiente curva, [Nombre de la curva], ..."
                 lap_idx = sample.completed_laps
                 dist_round = int(min_dist_m)
                 marker = best_corner.braking_marker
                 gear = best_corner.gear
 
                 if lap_idx <= 1:
-                    advice = f"Aproximando a {best_corner.name} en {dist_round} metros. Frena en {marker} y baja a {gear}ª."
+                    advice = f"En la siguiente curva, {best_corner.name}, frena en {marker} y baja a {gear}ª."
                 elif lap_idx % 3 == 0:
-                    if "T1" in best_corner.id:
-                        advice = f"{best_corner.name} en {dist_round}m. Frena en el 100, no des tope al stick."
-                    elif "T7" in best_corner.id or "Combes" in best_corner.name:
-                        advice = f"Viene Les Combes. Cartel de 100, suelta el gatillo con suavidad."
-                    elif "Bus" in best_corner.name or "T18" in best_corner.id:
-                        advice = f"Chicana Bus Stop. Frenada firme en el 150 y rotación limpia."
-                    else:
-                        advice = f"Viene {best_corner.name}. Referencia en {marker}, marcha {gear}."
+                    advice = f"En la siguiente curva, {best_corner.name}, a {dist_round} metros. Apura la frenada en {marker} y busca el vértice en marcha {gear}."
                 elif lap_idx % 2 == 0:
-                    advice = f"{best_corner.name}, frena en {marker}, baja a {gear}ª."
+                    advice = f"En la siguiente curva, {best_corner.name}, referencia en {marker}, baja a {gear}ª."
                 else:
-                    advice = f"{best_corner.name} adelante. Apura a {marker} y busca tracción limpia."
+                    advice = f"En la siguiente curva, {best_corner.name}, cartel de {marker}. Modula el freno progresivo y asegura la tracción en salida."
 
                 self._broadcast_radio(advice, "anticipation")
 
@@ -338,12 +344,13 @@ class LocalAIEngineer:
 
                 self.active_corner = None
 
-        # 5. MONITOREO DE ESTADO DEL COCHE, AYUDAS Y DESGASTE DE NEUMÁTICOS
+        # 5. MONITOREO DE ESTADO DEL COCHE, AYUDAS, DESGASTE Y COACHING PREVENTIVO
         # Silenciado en "telemetry"
         if self.voice_mode in ("companion", "car_state"):
             self._check_assists_reminder(sample, now)
             self._check_car_state_alerts(sample, now)
             self._check_tyre_wear_reports(sample, now)
+            self._check_preventative_coaching(sample, now)
 
         return self.get_state()
 
@@ -526,7 +533,139 @@ class LocalAIEngineer:
             self._broadcast_radio(msg, "alert")
             return
 
-    def _broadcast_radio(self, text: str, category: str) -> None:
+        # 4. Combustible intermedio y reporte de autonomía en carrera
+        if (
+            getattr(sample, "aid_fuel_rate", 1.0) > 0.05
+            and sample.fuel > 9.0
+            and (now - self._last_car_state_call_ts) >= 60.0
+            and self._last_car_alert_key != f"fuel_stint_{int(sample.fuel // 8)}"
+        ):
+            self._last_car_alert_key = f"fuel_stint_{int(sample.fuel // 8)}"
+            self._last_car_state_call_ts = now
+            self.last_speech_ts = now
+            liters = round(sample.fuel, 1)
+            msg = f"Reporte de combustible: {liters} litros restantes en el tanque. Autonomía estable para continuar en pista."
+            self._broadcast_radio(msg, "car_state")
+            return
+
+    def _check_off_track_events(self, sample: TelemetrySample, now: float) -> None:
+        """
+        Detecta en tiempo real cuando el piloto excede los límites del trazado o se sale de la pista.
+        0 = en asfalto, 1-2 = pianos, 3 = tres ruedas fuera (límites), 4 = salida de pista total (grava/hierba).
+        Emite aviso prioritario para interrumpir mensajes secundarios y alertar al piloto.
+        """
+        if sample.is_in_pit or sample.is_in_pit_lane or sample.speed_kmh < 26.0:
+            self._is_currently_off_track = False
+            return
+
+        tyres_out = getattr(sample, "tyres_out", 0)
+        is_off = getattr(sample, "is_off_track", False) or tyres_out >= 3
+
+        if is_off:
+            if not self._is_currently_off_track:
+                self._is_currently_off_track = True
+                self._off_track_start_ts = now
+
+                # Cooldown de 9 segundos para no spamear en la misma excursión
+                if (now - self._last_off_track_alert_ts) > 9.0:
+                    self._last_off_track_alert_ts = now
+                    self.last_speech_ts = now
+                    if tyres_out >= 4:
+                        msg = "¡Salida de pista completa! Mantén el volante recto y reincorpora con precaución."
+                    else:
+                        msg = "¡Cuidado, tres ruedas fuera del trazado! Cuidado con los límites de pista."
+                    self._broadcast_radio(msg, "alert", priority=True)
+        else:
+            if self._is_currently_off_track:
+                off_dur = now - self._off_track_start_ts
+                self._is_currently_off_track = False
+                if off_dur > 2.0 and (now - self._last_off_track_alert_ts) > 6.0:
+                    self._last_off_track_alert_ts = now
+                    self.last_speech_ts = now
+                    self._broadcast_radio("De vuelta en el asfalto. Tracción limpia y concéntrate en la siguiente curva.", "coaching")
+
+    def _check_preventative_coaching(self, sample: TelemetrySample, now: float) -> None:
+        """
+        Evalúa el modo de conducción en carrera y genera tips preventivos proactivos:
+        - "Si sigues con este modo de manejo tu consumo de combustible, neumáticos o frenos se degradará..."
+        - "Tienes que aumentar el ritmo y perder el miedo"
+        - Cuida al usuario y lo ayuda a mejorar su rendimiento.
+        """
+        if self.voice_mode != "companion":
+            return
+
+        # Solo en rectas estables (> 85 km/h, volante casi recto, sin frenar y fuera de curva)
+        if (
+            self.active_corner is not None
+            or sample.speed_kmh < 85.0
+            or abs(sample.steer_angle) > 12.0
+            or sample.brake > 0.05
+            or sample.is_in_pit
+            or sample.is_in_pit_lane
+        ):
+            return
+
+        # Frecuencia evaluativa: cada 38 a 45 segundos
+        if (now - self._preventative_coaching_ts) < 40.0 or (now - self.last_speech_ts) < 7.0:
+            return
+
+        w = sample.tyre_wear or [3.0, 3.0, 3.0, 3.0]
+        front_wear_val = min(w[0], w[1])
+        core_temps = sample.tyre_temps_core or [80.0, 80.0, 80.0, 80.0]
+        max_tyre_temp = max(core_temps)
+        max_brake = max(sample.brake_temps) if sample.brake_temps else 0.0
+
+        tip_text = ""
+        category = "coaching"
+
+        # 1. Alerta preventiva de degradación de neumáticos por estrés térmico o fricción
+        if max_tyre_temp > 92.5 or (front_wear_val < 2.6 and getattr(sample, "aid_tire_rate", 1.0) > 0.05):
+            tip_text = (
+                "Tip preventivo: Si sigues con este modo de manejo forzando la dirección en las entradas, "
+                "el desgaste de tus neumáticos delanteros aumentará más rápido. Modula más suave el freno para rotar el coche y cuidar la goma."
+            )
+        # 2. Alerta preventiva de degradación de frenos por temperatura alta (> 580°C)
+        elif max_brake > 580.0:
+            tip_text = (
+                f"Tip preventivo: La temperatura de frenos ronda los {int(max_brake)} grados. Si mantienes estas frenadas tan bruscas, "
+                "la degradación de frenos se disparará y perderás mordida en las curvas rápidas. Haz un poco de coasting antes del vértice."
+            )
+        # 3. Alerta preventiva de consumo de combustible excesivo por estirar marchas cortas
+        elif sample.gear <= 2 and sample.gas > 0.88 and getattr(sample, "aid_fuel_rate", 1.0) > 0.05:
+            tip_text = (
+                "Tip preventivo: Con este modo de acelerar tan a fondo en marchas bajas, tu consumo de combustible aumentará más de la cuenta. "
+                "Sube de marcha antes si queremos llegar con margen al final de la tanda."
+            )
+        # 4. Falta de ritmo / timidez en paso por curva ("Aumentar el ritmo y perder el miedo")
+        elif self.last_corner_result and self.last_corner_result.get("speed_delta_kmh", 0) < -7.0:
+            c_name = self.last_corner_result.get("corner_name", "las curvas rápidas")
+            options = [
+                f"Compañero, en {c_name} tienes que aumentar el ritmo y perder el miedo. La telemetría muestra que el auto tiene agarre de sobra para entrar diez kilómetros por hora más rápido.",
+                "Tienes margen en el paso por curva. Confía en el agarre del chasis, aumenta el ritmo y pierde el miedo: el auto va sobre raíles.",
+                "Podemos apretar más en los vértices. Suelta el freno con confianza y entra con mayor velocidad; tienes estabilidad absoluta.",
+            ]
+            idx = int(now) % len(options)
+            tip_text = options[idx]
+        # 5. Manejo limpio y consistente
+        else:
+            options = [
+                "Tip de telemetría: Con este modo de manejo suave y consistente, la degradación de neumáticos y el consumo de combustible se mantendrán mínimos. Estás cuidando el auto a la perfección.",
+                "Ritmo constante y limpio. Mantén este modo de manejo para asegurar una carrera sólida y con degradación controlada.",
+            ]
+            idx = int(now) % len(options)
+            tip_text = options[idx]
+            category = "praise"
+
+        # Anti-repetición de tips preventivos
+        if tip_text and tip_text not in self._recent_tips[-3:]:
+            self._recent_tips.append(tip_text)
+            if len(self._recent_tips) > 10:
+                self._recent_tips.pop(0)
+            self._preventative_coaching_ts = now
+            self.last_speech_ts = now
+            self._broadcast_radio(tip_text, category)
+
+    def _broadcast_radio(self, text: str, category: str, priority: bool = False) -> None:
         """Emite por voz y guarda en el historial de radio."""
         now = time.time()
         time_str = datetime.now().strftime("%H:%M:%S")
@@ -552,7 +691,7 @@ class LocalAIEngineer:
         # Sintetizar voz si el motor está presente
         if self.voice:
             try:
-                self.voice.speak(text)
+                self.voice.speak(text, priority=priority)
             except Exception:
                 pass
 
