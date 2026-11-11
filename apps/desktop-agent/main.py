@@ -515,6 +515,19 @@ class ApexDesktopAgentApp:
                 }
 
             def _on_cloud_push_resp(data: Dict[str, Any]) -> None:
+                if not isinstance(data, dict):
+                    return
+                remote_user = data.get("discord_username")
+                if remote_user and remote_user != getattr(self.selector_ui, "linked_username", ""):
+                    try:
+                        self.root.after(
+                            0,
+                            lambda: self.selector_ui.set_sync_feedback(
+                                True, "Sincronizado", remote_user, mode
+                            ),
+                        )
+                    except Exception:
+                        pass
                 remote_voice = data.get("voice_mode")
                 if remote_voice and remote_voice in ("companion", "car_state", "telemetry"):
                     if self.ai_engineer.voice_mode != remote_voice:

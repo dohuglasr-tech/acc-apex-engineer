@@ -315,11 +315,35 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
       const userId = authData?.user?.id || null;
       setIsAuthenticated(Boolean(userId));
 
+      if (!userId) {
+        // Aislamiento total: Si no hay sesión autenticada en el navegador,
+        // jamás consultar datos de otros pilotos ni mezclar telemetría.
+        setProfile(null);
+        setCloudHeartbeatActive(false);
+        if (!wsActiveRef.current) {
+          setIsAccLive(false);
+          setFrame(null);
+          setActiveSetup(null);
+          setEngineerState(null);
+          setLiveAlert(null);
+          setTrace([]);
+          setDrivingErrors([]);
+          setSetups([]);
+        }
+        return;
+      }
+
       const { data: state } = await supabase.rpc("get_active_telemetry_state", {
         p_user_id: userId,
       });
 
-      if (!state || !state.found || !state.profile) return;
+      if (!state || !state.found || !state.profile) {
+        if (!wsActiveRef.current) {
+          setIsAccLive(false);
+          setCloudHeartbeatActive(false);
+        }
+        return;
+      }
 
       const prof = state.profile;
       const remoteVoiceMode = (prof.voice_mode as VoiceMode) || "companion";
@@ -596,12 +620,10 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
-      if (isSupabaseConfigured()) {
+      if (isSupabaseConfigured() && profile?.agent_token) {
         const supabase = createClient();
-        const tokenToUpdate =
-          profile?.agent_token || "6be5b7f2-a67b-47f6-be2c-7a5297d04abd";
         await supabase.rpc("update_agent_input_mode", {
-          p_agent_token: tokenToUpdate,
+          p_agent_token: profile.agent_token,
           p_input_mode: mode,
           p_wheel_type: wheelType || null,
         });
@@ -621,13 +643,11 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
-      if (isSupabaseConfigured()) {
+      if (isSupabaseConfigured() && profile?.agent_token) {
         try {
           const supabase = createClient();
-          const tokenToUpdate =
-            profile?.agent_token || "6be5b7f2-a67b-47f6-be2c-7a5297d04abd";
           await supabase.rpc("update_agent_voice_mode", {
-            p_agent_token: tokenToUpdate,
+            p_agent_token: profile.agent_token,
             p_voice_mode: mode,
           });
         } catch {

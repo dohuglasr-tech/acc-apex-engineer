@@ -78,13 +78,14 @@ export function Navbar() {
           <div className="flex items-center gap-5">
             {isAuthenticated ? (
               <div className="flex items-center gap-4">
-                <span className="text-xs text-zinc-300 font-medium">
+                <span className="text-xs text-white font-mono font-medium flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   {profile?.discord_username || "Piloto"}
                 </span>
                 <form action="/auth/signout" method="post">
                   <button
                     type="submit"
-                    className="text-[11px] uppercase tracking-wider text-zinc-400 hover:text-white transition"
+                    className="text-[11px] uppercase tracking-wider text-zinc-400 hover:text-white transition font-mono"
                   >
                     Cerrar sesión
                   </button>
@@ -92,17 +93,11 @@ export function Navbar() {
               </div>
             ) : (
               <div className="flex items-center gap-3">
-                {profile && (
-                  <span className="hidden sm:inline-flex items-center gap-1.5 text-[11px] font-mono text-zinc-400 border border-zinc-800 bg-zinc-900/60 px-2.5 py-1 rounded">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Viendo a: <strong className="text-zinc-200">{profile.discord_username}</strong>
-                  </span>
-                )}
                 <Link
                   href="/login"
-                  className="text-xs font-medium text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-400 rounded-full px-4 py-1.5 transition"
+                  className="text-xs font-mono font-bold text-white bg-[#E10600] hover:bg-[#b80500] rounded-full px-4 py-1.5 transition shadow-sm tracking-wider"
                 >
-                  Acceso Piloto
+                  ACCESO PILOTO
                 </Link>
               </div>
             )}

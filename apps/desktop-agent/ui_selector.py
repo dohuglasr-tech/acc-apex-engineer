@@ -28,7 +28,7 @@ DEFAULT_SUPABASE_ANON_KEY = (
     "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtnZ3lucW91Z2Nua2pzc3J5Y3R3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyNTgwMjAsImV4cCI6MjEwOTgzNDAyMH0."
     "pccwkvHf1YLH5yPu8xn_WS5iLK9ZHZulfT87BX_KJuY"
 )
-DEFAULT_AGENT_TOKEN = "e4b029a1-8d25-4c07-96a1-f76159c1182e"
+DEFAULT_AGENT_TOKEN = ""
 DEFAULT_GEMINI_KEY = ""
 WEB_DASHBOARD_URL = "https://acc-apex-engineer.vercel.app/dashboard"
 
@@ -41,8 +41,8 @@ def load_agent_config() -> Dict[str, Any]:
                 cfg["supabase_url"] = DEFAULT_SUPABASE_URL
             if not cfg.get("supabase_anon_key"):
                 cfg["supabase_anon_key"] = DEFAULT_SUPABASE_ANON_KEY
-            if not cfg.get("agent_token"):
-                cfg["agent_token"] = DEFAULT_AGENT_TOKEN
+            if cfg.get("agent_token") is None:
+                cfg["agent_token"] = ""
             if not cfg.get("input_mode"):
                 cfg["input_mode"] = "gamepad"
             if not cfg.get("driving_style"):
@@ -56,7 +56,7 @@ def load_agent_config() -> Dict[str, Any]:
         "input_mode": "gamepad",
         "driving_style": "safe",
         "wheel_type": "",
-        "agent_token": DEFAULT_AGENT_TOKEN,
+        "agent_token": "",
         "supabase_url": DEFAULT_SUPABASE_URL,
         "supabase_anon_key": DEFAULT_SUPABASE_ANON_KEY,
         "voice_enabled": True,
@@ -329,7 +329,7 @@ class InputModeSelectorWindow:
 
         tk.Label(
             step2,
-            text="02 / TOKEN DE VINCULACIÓN CON LA WEB (YA CONFIGURADO)",
+            text="02 / TOKEN INDIVIDUAL DE VINCULACIÓN CON LA WEB",
             fg="#E10600",
             bg="#08080A",
             font=("Consolas", 9, "bold"),
@@ -484,7 +484,7 @@ class InputModeSelectorWindow:
     def _on_window_close(self) -> None:
         """Asegura que todos los valores se guarden en disco al cerrar la ventana con la X."""
         try:
-            self.config["agent_token"] = self.token_var.get().strip() or DEFAULT_AGENT_TOKEN
+            self.config["agent_token"] = self.token_var.get().strip()
             self.config["gemini_api_key"] = self.gemini_key_var.get().strip()
             self.config["input_mode"] = self.selected_mode.get().strip() or "gamepad"
             self.config["driving_style"] = self.driving_style_var.get().strip() or "safe"
@@ -529,7 +529,7 @@ class InputModeSelectorWindow:
     ) -> None:
         mode_es = MODE_NAMES_ES.get(mode, mode.upper())
         if success:
-            self.linked_username = username or "DGVLA"
+            self.linked_username = username or "PILOTO"
             self.btn_save.configure(
                 bg="#10B981",
                 activebackground="#059669",

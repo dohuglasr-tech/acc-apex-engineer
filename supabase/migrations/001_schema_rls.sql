@@ -356,6 +356,7 @@ begin
     'id', v_profile.id,
     'discord_username', v_profile.discord_username,
     'input_mode', v_profile.input_mode,
+    'voice_mode', v_profile.voice_mode,
     'is_live_acc', v_profile.is_live_acc,
     'updated_at', v_profile.updated_at
   );
@@ -368,18 +369,26 @@ language plpgsql
 security definer set search_path = public
 as $$
 declare
+  v_target_user_id uuid;
   v_prof public.profiles%rowtype;
   v_setups jsonb;
   v_last_lap jsonb;
 begin
-  if p_user_id is not null then
-    select * into v_prof from public.profiles where id = p_user_id limit 1;
-  else
-    select * into v_prof from public.profiles order by updated_at desc limit 1;
+  -- Determinar el usuario objetivo: o el parámetro explícito, o el usuario autenticado en la sesión
+  v_target_user_id := coalesce(p_user_id, auth.uid());
+
+  -- Si no hay usuario especificado ni autenticado, NUNCA devolver datos de otro usuario
+  if v_target_user_id is null then
+    return jsonb_build_object(
+      'found', false,
+      'error', 'No se ha especificado ningún usuario ni existe sesión activa.'
+    );
   end if;
 
+  select * into v_prof from public.profiles where id = v_target_user_id limit 1;
+
   if not found then
-    return jsonb_build_object('found', false);
+    return jsonb_build_object('found', false, 'error', 'Perfil no encontrado');
   end if;
 
   select coalesce(jsonb_agg(t), '[]'::jsonb) into v_setups

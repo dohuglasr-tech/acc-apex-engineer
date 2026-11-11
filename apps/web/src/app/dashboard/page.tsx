@@ -17,6 +17,7 @@ function formatLapTime(ms: number): string {
 
 export default function DashboardPage() {
   const {
+    isAuthenticated,
     frame,
     trace,
     isAccLive,
@@ -58,6 +59,26 @@ export default function DashboardPage() {
   if (!frame) {
     return (
       <div className="space-y-10">
+        {!isAuthenticated && (
+          <div className="p-4 rounded-xl bg-gradient-to-r from-red-950/40 via-zinc-900 to-zinc-950 border border-red-500/30 flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="text-xs font-mono font-bold text-red-400 uppercase tracking-wider flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                CUENTA INDIVIDUAL NO AUTENTICADA
+              </div>
+              <p className="text-xs text-zinc-300 mt-1">
+                Inicia sesión con tu cuenta de Discord para tener tu propio perfil individual, obtener tu token único para el Agente PC y aislar tus setups y telemetría de otros pilotos.
+              </p>
+            </div>
+            <Link
+              href="/login"
+              className="px-5 py-2 rounded-full bg-[#E10600] hover:bg-[#b80500] text-xs font-bold text-white uppercase tracking-wider transition font-mono shadow-md"
+            >
+              INICIAR SESIÓN CON DISCORD
+            </Link>
+          </div>
+        )}
+
         {/* Encabezado de la Guía Paso a Paso */}
         <div className="border-b border-zinc-800 pb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -256,8 +277,19 @@ export default function DashboardPage() {
                     2. Abre el programa ACC_Apex_Engineer.exe en tu PC
                   </div>
                   <p className="text-zinc-400 mt-1 leading-relaxed">
-                    Descarga y abre <code className="text-white font-mono">ACC_Apex_Engineer.exe</code>. Ya incluye tu cuenta (<span className="text-white">{profile?.discord_username || "dgvla"}</span>) pre-vinculada automáticamente.{" "}
-                    <strong className="text-white">Importante:</strong> Déjalo abierto en segundo plano mientras juegas.
+                    Descarga y abre <code className="text-white font-mono">ACC_Apex_Engineer.exe</code> en tu PC.{" "}
+                    {profile?.agent_token ? (
+                      <span>
+                        Tu token único de piloto es:{" "}
+                        <code className="text-emerald-400 font-mono select-all bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">
+                          {profile.agent_token}
+                        </code>. Pégalo en el Paso 2 del programa.
+                      </span>
+                    ) : (
+                      <span>
+                        Inicia sesión con Discord para ver y copiar tu token individual de vinculación.
+                      </span>
+                    )}
                   </p>
                 </td>
                 <td className="py-5 px-4 align-top">
@@ -318,8 +350,8 @@ export default function DashboardPage() {
                     4. Completa 1 vuelta para recibir tu Setup Auto-Inyectado
                   </div>
                   <p className="text-zinc-400 mt-1 leading-relaxed">
-                    Al cruzar la línea de meta, el ingeniero de pista te hablará por radio y guardará automáticamente el setup optimizado{" "}
-                    <code className="text-white font-mono">APEX_AUTO_LIVE.json</code> dentro de la carpeta oficial de tu juego (<code className="text-zinc-300 font-mono">Documentos\Assetto Corsa Competizione\Setups</code>).
+                    Al cruzar la meta, Álvaro te cantará el resumen por radio y guardará el setup en una de las 3 ranuras rotativas (
+                    <code className="text-white font-mono">APEX_SETUP_1.json, 2 o 3</code>) dentro de tu carpeta oficial de Setups para que lo cargues en boxes.
                   </p>
                 </td>
                 <td className="py-5 px-4 align-top">
