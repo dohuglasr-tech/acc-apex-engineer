@@ -35,6 +35,7 @@ import requests
 import websockets
 
 from auto_setup_injector import AutoSetupInjector
+from fuel_strategy import FuelStrategyCalculator, FuelStrategyResult
 from gemini_race_engineer import GeminiRaceEngineer
 from local_ai_engineer import LocalAIEngineer
 from overlay_hud import OverlayHUD
@@ -231,6 +232,7 @@ class ApexDesktopAgentApp:
         self.shm_reader = ACCSharedMemoryReader()
         self.analyzer = TelemetryLapAnalyzer(input_mode=initial_mode)
         self.injector = AutoSetupInjector(input_mode=initial_mode, driving_style=initial_style)
+        self.fuel_calculator = FuelStrategyCalculator()
         self.voice = VoiceEngineer(enabled=bool(self.config.get("voice_enabled", True)))
         gemini_key = self.config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
         self.gemini = GeminiRaceEngineer(api_key=gemini_key)
@@ -331,6 +333,16 @@ class ApexDesktopAgentApp:
                     completed_lap = self.analyzer.process_sample(sample)
                     if completed_lap is not None:
                         self._handle_completed_lap(completed_lap)
+
+                    # Cálculo y aviso de estrategia de combustible en boxes antes de salir a pista
+                    if sample.is_in_pit or (sample.is_in_pit_lane and sample.speed_kmh < 15.0):
+                        pit_strat = self.fuel_calculator.check_and_evaluate_pit_strategy(
+                            sample=sample,
+                            best_lap_ms=sample.best_lap_ms,
+                            last_lap_ms=sample.last_lap_ms,
+                        )
+                        if pit_strat:
+                            self._handle_pit_fuel_strategy(pit_strat, sample)
             except Exception as e:
                 try:
                     with open("agent_err.log", "a", encoding="utf-8") as f:
@@ -360,6 +372,10 @@ class ApexDesktopAgentApp:
             curb_strikes=lap.curb_strikes,
         )
 
+        avg_fuel_lap = self.fuel_calculator.record_lap_consumption(
+            lap.car_model, lap.track_name, lap.fuel_used
+        )
+
         slot_name = f"APEX_SETUP_{slot_num}"
         self.latest_setup_event = {
             "version_num": version_num,
@@ -382,6 +398,8 @@ class ApexDesktopAgentApp:
             "tyre_pressures_hot": lap.tyre_pressures_hot,
             "driving_errors": lap.driving_errors,
             "telemetry_trace": lap.telemetry_trace,
+            "fuel_used": lap.fuel_used,
+            "avg_fuel_per_lap": avg_fuel_lap,
         }
 
         self.hud.set_setup_status(f"{slot_name}.json en garaje (Boxes)")
@@ -390,10 +408,11 @@ class ApexDesktopAgentApp:
             mins = int(lap_sec // 60)
             secs = int(lap_sec % 60)
             tenths = int(round((lap_sec - int(lap_sec)) * 10))
+            fuel_s = f" Consumo: {lap.fuel_used:.1f} litros." if lap.fuel_used > 0.4 else ""
             if mins > 0:
-                lap_msg = f"Vuelta {lap.lap_number}: {mins} minuto{'s' if mins != 1 else ''}, {secs} segundos y {tenths} décimas."
+                lap_msg = f"Vuelta {lap.lap_number}: {mins} minuto{'s' if mins != 1 else ''}, {secs} segundos y {tenths} décimas.{fuel_s}"
             else:
-                lap_msg = f"Vuelta {lap.lap_number}: {secs} segundos y {tenths} décimas."
+                lap_msg = f"Vuelta {lap.lap_number}: {secs} segundos y {tenths} décimas.{fuel_s}"
             self.voice.speak(lap_msg)
         elif self.ai_engineer.voice_mode == "companion":
             primary_err = lap.driving_errors[0]["type"] if lap.driving_errors else None
@@ -441,6 +460,8 @@ class ApexDesktopAgentApp:
                     "setup_reason": reason_summary,
                     "primary_error": primary_err or "trazada constante",
                     "tyre_wear_pct": f"{avg_wear}% (DI {wear_pcts[0]}%, DD {wear_pcts[1]}%, TI {wear_pcts[2]}%, TD {wear_pcts[3]}%)",
+                    "fuel_used_l": lap.fuel_used,
+                    "avg_fuel_l": avg_fuel_lap,
                 }
 
                 def _on_gemini_lap(g_text: str, g_cat: str) -> None:
@@ -457,6 +478,7 @@ class ApexDesktopAgentApp:
                     primary_error=primary_err,
                     input_mode=lap.input_mode,
                     road_temp=lap.road_temp,
+                    fuel_used=lap.fuel_used,
                 )
         self.cloud_sync.sync_lap_and_setup_async(
             lap=lap,
@@ -465,6 +487,35 @@ class ApexDesktopAgentApp:
             changes_summary=changes,
             version_num=version_num,
         )
+
+    def _handle_pit_fuel_strategy(
+        self, strat: FuelStrategyResult, sample: TelemetrySample
+    ) -> None:
+        """Emite por radio la estrategia de combustible antes de salir de boxes."""
+        self.hud.set_setup_status(
+            f"BOXES: {strat.session_name.upper()} -> Cargar {strat.recommended_fuel_l}L"
+        )
+        if self.gemini and self.gemini.is_available:
+            ctx = {
+                "session_name": strat.session_name,
+                "recommended_fuel_l": strat.recommended_fuel_l,
+                "avg_fuel_per_lap": strat.avg_fuel_per_lap,
+                "estimated_laps": strat.estimated_laps,
+                "safety_liters": strat.safety_liters,
+                "current_fuel_l": strat.current_fuel_l,
+                "car_model": sample.car_model,
+                "track_name": sample.track_name,
+            }
+
+            def _on_gemini_fuel(g_text: str, g_cat: str) -> None:
+                self.ai_engineer._broadcast_radio(g_text, g_cat)
+
+            self.gemini.generate_radio_advice_async(
+                "pit_fuel_strategy", ctx, _on_gemini_fuel
+            )
+        else:
+            self.voice.announce_pit_fuel(strat.speech_text)
+            self.ai_engineer._broadcast_radio(strat.speech_text, "strategy")
 
     def _refresh_hud_loop(self) -> None:
         sample = self.latest_sample
@@ -476,11 +527,16 @@ class ApexDesktopAgentApp:
         elif getattr(self.voice, "last_spoken_text", ""):
             current_speech = self.voice.last_spoken_text
 
+        avg_fuel = 0.0
+        if sample is not None:
+            avg_fuel = self.fuel_calculator.get_avg_fuel(sample.car_model, sample.track_name)
+
         self.hud.update_telemetry(
             sample=sample,
             live_alert=self.analyzer.live_alert if is_live else None,
             radio_text=current_speech,
             is_speaking=is_speaking,
+            avg_fuel_per_lap=avg_fuel,
         )
 
         if is_live and sample is not None:

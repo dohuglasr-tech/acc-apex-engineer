@@ -69,6 +69,8 @@ class CompletedLapAnalysis:
     road_temp: float
     tyre_temps_imo: List[List[float]] = None  # type: ignore
     curb_strikes: int = 0
+    fuel_used: float = 0.0
+    fuel_remaining: float = 0.0
 
 
 class TelemetryLapAnalyzer:
@@ -365,6 +367,10 @@ class TelemetryLapAnalyzer:
         understeer_ratio = (understeer_samples / max(1, cornering_samples))
         tc_cut_ratio = (tc_cut_samples / max(1, exit_samples))
 
+        start_fuel = samples[0].fuel if samples else finish_sample.fuel
+        end_fuel = finish_sample.fuel
+        lap_fuel_used = round(max(0.0, start_fuel - end_fuel), 2)
+
         return CompletedLapAnalysis(
             lap_number=finish_sample.completed_laps,
             car_model=finish_sample.car_model,
@@ -388,5 +394,7 @@ class TelemetryLapAnalyzer:
             road_temp=finish_sample.road_temp,
             tyre_temps_imo=imo_temps,
             curb_strikes=curb_strikes,
+            fuel_used=lap_fuel_used,
+            fuel_remaining=round(finish_sample.fuel, 2),
         )
 

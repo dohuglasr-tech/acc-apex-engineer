@@ -180,6 +180,7 @@ class VoiceEngineer:
         primary_error: Optional[str] = None,
         input_mode: str = "gamepad",
         road_temp: float = 30.0,
+        fuel_used: float = 0.0,
     ) -> None:
         if not self.enabled or lap_time_ms <= 0:
             return
@@ -197,6 +198,7 @@ class VoiceEngineer:
 
         # Explicación clara al piloto de F1:
         # - Vuelta y tiempo registrado
+        # - Consumo de combustible medido en la vuelta
         # - Creación del setup en garaje en una de las 3 ranuras (APEX_SETUP_1/2/3)
         # - Adaptado al periférico (mando/volante), temperatura de asfalto y telemetría
         # - Instrucción para cargarlo al entrar a boxes
@@ -212,13 +214,20 @@ class VoiceEngineer:
 
         slot_label = f"APEX SETUP {slot_num}"
         time_text = f"{minutes} {sec_whole:02d} punto {tenths}" if minutes > 0 else f"{sec_whole:02d} punto {tenths}"
+        fuel_note = f" Consumo: {fuel_used:.1f} litros." if fuel_used > 0.4 else ""
         msg = (
-            f"Vuelta {lap_number}: {time_text}. "
+            f"Vuelta {lap_number}: {time_text}.{fuel_note} "
             f"He creado el setup {slot_label} en tu garaje, adaptado a tu {input_name} y a los {road_temp:.0f} grados de pista. "
             f"{advice} Cárgalo en boxes cuando entres."
         ).strip()
 
         self.speak(msg)
+
+    def announce_pit_fuel(self, speech_text: str) -> None:
+        """Comunica por radio la estrategia de combustible calculada en boxes antes de salir a pista."""
+        if not self.enabled or not speech_text:
+            return
+        self.speak(speech_text, priority=True)
 
     async def _synthesize_edge_neural(self, text: str, out_path: Path) -> bool:
         """Síntesis con Microsoft Edge Neural TTS en español fluido, rápido y natural."""

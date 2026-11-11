@@ -151,7 +151,7 @@ class GeminiRaceEngineer:
             if not prompt:
                 return
 
-            max_tok = 95 if event_type == "lap_summary" else 50
+            max_tok = 95 if event_type in ("lap_summary", "pit_fuel_strategy") else 50
             for model in [self.model_name] + [m for m in SUPPORTED_MODELS if m != self.model_name]:
                 try:
                     response = self.client.models.generate_content(
@@ -173,6 +173,8 @@ class GeminiRaceEngineer:
                             category = "alert"
                         elif event_type == "lap_summary":
                             category = "praise"
+                        elif event_type == "pit_fuel_strategy":
+                            category = "strategy"
                         on_ready(text, category)
                         break
                 except Exception as e:
@@ -215,13 +217,32 @@ class GeminiRaceEngineer:
             input_mode_es = ctx.get("input_mode_es", "mando")
             track_cond = ctx.get("track_cond", "condiciones de pista")
             setup_reason = ctx.get("setup_reason", "calibración térmica y estabilidad")
+            fuel_used_l = ctx.get("fuel_used_l", 0.0)
+            avg_fuel_l = ctx.get("avg_fuel_l", 0.0)
+            fuel_text = f"Consumo en vuelta: {fuel_used_l:.1f} litros (media {avg_fuel_l:.1f} L/vta). " if fuel_used_l > 0 else ""
             return (
-                f"El piloto completó vuelta en {track} con tiempo {lap_time} ({delta_str}). "
+                f"El piloto completó vuelta en {track} con tiempo {lap_time} ({delta_str}). {fuel_text}"
                 f"Desgaste de gomas: {tyres}. Condiciones de pista: {track_cond}. Periférico: {input_mode_es}. "
                 f"Has creado y guardado en su garaje el setup '{slot_name}' adaptado a su {input_mode_es}, a los {track_cond} y a su telemetría ({setup_reason}). "
                 f"Comunícale por radio como ingeniero de pista de F1 (en 2 frases enérgicas, profesionales y directas): "
-                f"1) Su tiempo y si mejoró o no ({delta_str}). "
+                f"1) Su tiempo, si mejoró o no ({delta_str}), y el consumo de combustible de la vuelta. "
                 f"2) Que le creaste '{slot_name}' en su garaje adaptado a su {input_mode_es} y a la pista, y que lo cargue cuando entre a boxes."
+            )
+        elif event_type == "pit_fuel_strategy":
+            session_name = ctx.get("session_name", "Carrera")
+            rec_fuel = ctx.get("recommended_fuel_l", 25)
+            avg_fuel = ctx.get("avg_fuel_per_lap", 3.2)
+            laps = ctx.get("estimated_laps", 8)
+            safety = ctx.get("safety_liters", 4.0)
+            cur_fuel = ctx.get("current_fuel_l", 0)
+            return (
+                f"El coche está en boxes antes de salir a pista en {track} para una sesión de {session_name}. "
+                f"Consumo medio medido: {avg_fuel:.1f} L/vuelta. Vueltas estimadas para la sesión: {laps}. "
+                f"Combustible exacto calculado: {rec_fuel} litros en el tanque (incluye {safety:.1f} L de margen de seguridad). "
+                f"Combustible actual: {cur_fuel:.1f} L. "
+                f"Comunícaselo por radio como Álvaro (ingeniero de pista de F1) antes de salir a pista: "
+                f"dile en 1 o 2 frases concisas cuánto combustible exacto debe cargar en el setup ({rec_fuel} L) "
+                f"y el margen de seguridad para no quedarse tirado."
             )
         elif event_type == "car_alert":
             alert = ctx.get("alert_reason", "presiones")

@@ -468,6 +468,7 @@ class OverlayHUD:
         live_alert: Optional[str] = None,
         radio_text: str = "",
         is_speaking: bool = False,
+        avg_fuel_per_lap: float = 0.0,
     ) -> None:
         if sample is None or not sample.is_live_acc:
             if self._visible:
@@ -528,8 +529,13 @@ class OverlayHUD:
         avg_w = int(sum(w_pct) / 4.0)
         avg_life = max(0, 100 - avg_w)
         wear_color = "#10B981" if avg_w < 15 else ("#F59E0B" if avg_w < 35 else "#EF4444")
+        fuel_str = (
+            f"{sample.fuel:.1f}L (-{avg_fuel_per_lap:.1f}L/vta)"
+            if avg_fuel_per_lap > 0
+            else f"{sample.fuel:.1f}L"
+        )
         self.lbl_wear.configure(
-            text=f"GOMAS: {avg_w}% DESGASTE ({avg_life}% VIDA) · DI {w_pct[0]}% DD {w_pct[1]}% TI {w_pct[2]}% TD {w_pct[3]}% | {sample.fuel:.1f}L",
+            text=f"GOMAS: {avg_w}% DESGASTE ({avg_life}% VIDA) · DI {w_pct[0]}% DD {w_pct[1]}% TI {w_pct[2]}% TD {w_pct[3]}% | {fuel_str}",
             fg=wear_color,
         )
 

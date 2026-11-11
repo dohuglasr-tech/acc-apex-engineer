@@ -273,6 +273,10 @@ class TelemetrySample:
     air_temp: float = 0.0
     road_temp: float = 0.0
     brake_bias: float = 0.0
+    session_type: int = 0
+    session_time_left: float = 0.0
+    session_laps: int = 0
+    max_fuel: float = 120.0
 
     def to_dict(self) -> Dict:
         return {
@@ -324,6 +328,10 @@ class TelemetrySample:
             "air_temp": round(self.air_temp, 1),
             "road_temp": round(self.road_temp, 1),
             "brake_bias": round(self.brake_bias, 1),
+            "session_type": self.session_type,
+            "session_time_left": round(self.session_time_left, 1),
+            "session_laps": self.session_laps,
+            "max_fuel": round(self.max_fuel, 1),
         }
 
 
@@ -543,6 +551,10 @@ class ACCSharedMemoryReader:
                 brake_bias=float(
                     phys.brakeBias * 100.0 if phys.brakeBias <= 1.0 else phys.brakeBias
                 ),
+                session_type=int(gfx.session) if gfx else 0,
+                session_time_left=float(gfx.sessionTimeLeft) if gfx else 0.0,
+                session_laps=int(gfx.numberOfLaps) if gfx else 0,
+                max_fuel=float(stc.maxFuel) if (stc and stc.maxFuel > 10.0) else 120.0,
             )
         except Exception:
             return None
