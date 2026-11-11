@@ -26,7 +26,7 @@ WS_EX_TOPMOST = 0x00000008
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_NOACTIVATE = 0x08000000
 
-HWND_TOPMOST = ctypes.c_void_p(-1).value
+HWND_TOPMOST = wintypes.HWND(-1)
 SWP_NOSIZE = 0x0001
 SWP_NOMOVE = 0x0002
 SWP_NOACTIVATE = 0x0010
@@ -37,6 +37,11 @@ if hasattr(user32, "SetWindowLongPtrW"):
     user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
     user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
     user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+else:
+    user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
+    user32.SetWindowLongW.restype = ctypes.c_long
+    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.GetWindowLongW.restype = ctypes.c_long
 
 user32.SetWindowPos.argtypes = [
     wintypes.HWND,
@@ -49,6 +54,29 @@ user32.SetWindowPos.argtypes = [
 ]
 user32.SetWindowPos.restype = wintypes.BOOL
 
+if hasattr(user32, "GetAncestor"):
+    user32.GetAncestor.argtypes = [wintypes.HWND, ctypes.c_uint]
+    user32.GetAncestor.restype = wintypes.HWND
+
+if hasattr(user32, "GetParent"):
+    user32.GetParent.argtypes = [wintypes.HWND]
+    user32.GetParent.restype = wintypes.HWND
+
+if hasattr(user32, "FindWindowW"):
+    user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+    user32.FindWindowW.restype = wintypes.HWND
+
+if hasattr(user32, "GetForegroundWindow"):
+    user32.GetForegroundWindow.argtypes = []
+    user32.GetForegroundWindow.restype = wintypes.HWND
+
+if hasattr(user32, "GetDesktopWindow"):
+    user32.GetDesktopWindow.argtypes = []
+    user32.GetDesktopWindow.restype = wintypes.HWND
+
+if hasattr(user32, "MonitorFromWindow"):
+    user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+    user32.MonitorFromWindow.restype = wintypes.HMONITOR
 
 class RECT(ctypes.Structure):
     _fields_ = [
@@ -58,7 +86,6 @@ class RECT(ctypes.Structure):
         ("bottom", wintypes.LONG),
     ]
 
-
 class MONITORINFO(ctypes.Structure):
     _fields_ = [
         ("cbSize", wintypes.DWORD),
@@ -66,6 +93,10 @@ class MONITORINFO(ctypes.Structure):
         ("rcWork", RECT),
         ("dwFlags", wintypes.DWORD),
     ]
+
+if hasattr(user32, "GetMonitorInfoW"):
+    user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MONITORINFO)]
+    user32.GetMonitorInfoW.restype = wintypes.BOOL
 
 
 class AgentAvatarCanvas(tk.Canvas):
@@ -372,12 +403,30 @@ class OverlayHUD:
             self.hud_position = position
             self.reposition_on_game_screen(force=True)
 
+    def _get_toplevel_hwnd(self) -> int:
+        """Obtiene de manera segura el HWND raíz del contenedor Win32 de Tkinter."""
+        try:
+            self.win.update_idletasks()
+            w_id = self.win.winfo_id()
+            if hasattr(user32, "GetAncestor"):
+                root_h = user32.GetAncestor(w_id, 2)  # GA_ROOT
+                if root_h:
+                    return root_h
+            if hasattr(user32, "GetParent"):
+                p_id = user32.GetParent(w_id)
+                if p_id:
+                    return p_id
+            return w_id
+        except Exception:
+            return 0
+
     def show_preview(self, duration_sec: float = 6.0) -> None:
         """Muestra una vista previa temporal del HUD para verificar posición y sobreposición en pantalla."""
         self._preview_until = time.time() + duration_sec
         self.reposition_on_game_screen(force=True)
         if not self._visible:
             self.win.deiconify()
+            self.win.update_idletasks()
             self._apply_click_through()
             self._visible = True
         self.enforce_topmost()
@@ -400,12 +449,22 @@ class OverlayHUD:
             h_mon = user32.MonitorFromWindow(hwnd_target, 2)  # MONITOR_DEFAULTTONEAREST
             mi = MONITORINFO()
             mi.cbSize = ctypes.sizeof(MONITORINFO)
-            user32.GetMonitorInfoW(h_mon, ctypes.byref(mi))
+            res = user32.GetMonitorInfoW(h_mon, ctypes.byref(mi))
 
-            mon_l = mi.rcMonitor.left
-            mon_t = mi.rcMonitor.top
-            mon_w = mi.rcMonitor.right - mi.rcMonitor.left
-            mon_h = mi.rcMonitor.bottom - mi.rcMonitor.top
+            if res and (mi.rcMonitor.right > mi.rcMonitor.left):
+                mon_l = mi.rcMonitor.left
+                mon_t = mi.rcMonitor.top
+                mon_w = mi.rcMonitor.right - mi.rcMonitor.left
+                mon_h = mi.rcMonitor.bottom - mi.rcMonitor.top
+            else:
+                mon_l = 0
+                mon_t = 0
+                try:
+                    mon_w = max(1280, self.win.winfo_screenwidth())
+                    mon_h = max(720, self.win.winfo_screenheight())
+                except Exception:
+                    mon_w = 1920
+                    mon_h = 1080
 
             hud_w = 520
             hud_h = 194
@@ -415,13 +474,13 @@ class OverlayHUD:
                 x = mon_l + 24
                 y = mon_t + 24
             elif pos == "bottom_center":
-                x = mon_l + max(0, (mon_w - hud_w) // 2)
-                y = mon_t + max(0, mon_h - hud_h - 40)
+                x = mon_l + max(24, (mon_w - hud_w) // 2)
+                y = mon_t + max(24, mon_h - hud_h - 40)
             elif pos == "bottom_right":
-                x = mon_l + max(0, mon_w - hud_w - 24)
-                y = mon_t + max(0, mon_h - hud_h - 40)
+                x = mon_l + max(24, mon_w - hud_w - 24)
+                y = mon_t + max(24, mon_h - hud_h - 40)
             else:  # "top_right" por defecto
-                x = mon_l + max(0, mon_w - hud_w - 24)
+                x = mon_l + max(24, mon_w - hud_w - 24)
                 y = mon_t + 24
 
             self.win.geometry(f"{hud_w}x{hud_h}+{x}+{y}")
@@ -434,61 +493,64 @@ class OverlayHUD:
         permanentemente sobre la ventana de ACC incluso en pantalla completa exclusiva o borderless.
         """
         now = time.time()
-        if (now - self._last_topmost_reinforce) < 0.35:
+        if (now - self._last_topmost_reinforce) < 0.30:
             return
         self._last_topmost_reinforce = now
 
         try:
             self.win.lift()
-            self.win.attributes("-topmost", True)
-            w_id = self.win.winfo_id()
-            p_id = user32.GetParent(w_id) or w_id
-            for h in (p_id, w_id):
-                if h:
-                    user32.SetWindowPos(
-                        h,
-                        HWND_TOPMOST,
-                        0,
-                        0,
-                        0,
-                        0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-                    )
+            root_h = self._get_toplevel_hwnd()
+            if root_h:
+                user32.SetWindowPos(
+                    root_h,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                )
         except Exception:
             pass
 
     def _apply_click_through(self) -> None:
-        """Aplica estilos extendidos Win32 transparentes y de click-through a nivel de hardware."""
+        """
+        Aplica estilos extendidos Win32 transparentes y de click-through a nivel de hardware.
+        Se aplica exclusivamente a la ventana raíz para no afectar el renderizado de los widgets internos.
+        """
         try:
-            w_id = self.win.winfo_id()
-            p_id = user32.GetParent(w_id) or w_id
-            for h in (p_id, w_id):
-                if h:
-                    if hasattr(user32, "GetWindowLongPtrW"):
-                        cur = user32.GetWindowLongPtrW(h, GWL_EXSTYLE)
-                    else:
-                        cur = user32.GetWindowLongW(h, GWL_EXSTYLE)
-                    new_style = (
-                        cur
-                        | WS_EX_LAYERED
-                        | WS_EX_TRANSPARENT
-                        | WS_EX_TOPMOST
-                        | WS_EX_TOOLWINDOW
-                        | WS_EX_NOACTIVATE
-                    )
-                    if hasattr(user32, "SetWindowLongPtrW"):
-                        user32.SetWindowLongPtrW(h, GWL_EXSTYLE, new_style)
-                    else:
-                        user32.SetWindowLongW(h, GWL_EXSTYLE, new_style)
-                    user32.SetWindowPos(
-                        h,
-                        HWND_TOPMOST,
-                        0,
-                        0,
-                        0,
-                        0,
-                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-                    )
+            root_h = self._get_toplevel_hwnd()
+            if not root_h:
+                return
+
+            if hasattr(user32, "GetWindowLongPtrW"):
+                cur = user32.GetWindowLongPtrW(root_h, GWL_EXSTYLE)
+            else:
+                cur = user32.GetWindowLongW(root_h, GWL_EXSTYLE)
+
+            new_style = (
+                cur
+                | WS_EX_LAYERED
+                | WS_EX_TRANSPARENT
+                | WS_EX_TOPMOST
+                | WS_EX_TOOLWINDOW
+                | WS_EX_NOACTIVATE
+            )
+
+            if hasattr(user32, "SetWindowLongPtrW"):
+                user32.SetWindowLongPtrW(root_h, GWL_EXSTYLE, new_style)
+            else:
+                user32.SetWindowLongW(root_h, GWL_EXSTYLE, new_style)
+
+            user32.SetWindowPos(
+                root_h,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
         except Exception:
             pass
 
@@ -655,6 +717,7 @@ class OverlayHUD:
         if now < self._preview_until:
             if not self._visible:
                 self.win.deiconify()
+                self.win.update_idletasks()
                 self._apply_click_through()
                 self._visible = True
             self.enforce_topmost()
@@ -687,6 +750,7 @@ class OverlayHUD:
         if not self._visible:
             self.reposition_on_game_screen(force=True)
             self.win.deiconify()
+            self.win.update_idletasks()
             self._apply_click_through()
             self._visible = True
 
