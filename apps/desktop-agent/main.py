@@ -328,8 +328,12 @@ class ApexDesktopAgentApp:
                     completed_lap = self.analyzer.process_sample(sample)
                     if completed_lap is not None:
                         self._handle_completed_lap(completed_lap)
-            except Exception:
-                pass
+            except Exception as e:
+                try:
+                    with open("agent_err.log", "a", encoding="utf-8") as f:
+                        f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Physics error: {e}\n")
+                except Exception:
+                    pass
             elapsed = time.perf_counter() - t0
             sleep_for = target_dt - elapsed
             if sleep_for > 0:

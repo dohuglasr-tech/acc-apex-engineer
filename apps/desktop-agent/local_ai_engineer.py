@@ -105,26 +105,33 @@ class LocalAIEngineer:
         Evalúa anticipación y rendimiento en curva.
         """
         self.last_sample = sample
-        if not sample.is_live_acc or sample.speed_kmh < 15.0 or sample.is_in_pit or sample.is_in_pit_lane:
+        if not sample.is_live_acc:
             self.upcoming_corner_data = None
             self.active_corner = None
             return self.get_state()
 
         self._ensure_track(sample.track_name)
+        now = time.time()
+
+        # Saludo de inicio de sesión por radio: inmediato al estar en pista en ACC
+        if not self._greeted_session and sample.is_live_acc:
+            self._greeted_session = True
+            track_disp = self.track_knowledge.display_name if self.track_knowledge else sample.track_name
+            greeting = f"¡Radio conectada! Hola compañero, soy Álvaro, tu ingeniero de pista en {track_disp}. Telemetría a 333 hercios activa. Te cantaré las curvas con tiempo. ¡Vamos a rodar!"
+            self._broadcast_radio(greeting, "praise")
+            self.last_speech_ts = now + 2.5
+
+        if sample.speed_kmh < 15.0 or sample.is_in_pit or sample.is_in_pit_lane:
+            self.upcoming_corner_data = None
+            self.active_corner = None
+            return self.get_state()
+
         if not self.track_knowledge:
             return self.get_state()
 
-        now = time.time()
         pos = sample.normalized_pos
         speed_mps = max(10.0, sample.speed_kmh / 3.6)
         track_len = float(self.track_knowledge.length_m)
-
-        # Saludo de inicio de sesión por radio
-        if not self._greeted_session and sample.speed_kmh > 45.0:
-            self._greeted_session = True
-            greeting = "¡Radio comprobada! Hola compañero, soy Álvaro, tu ingeniero de pista. Todo listo, te cantaré las curvas con tiempo. ¡Vamos con todo!"
-            self._broadcast_radio(greeting, "praise")
-            self.last_speech_ts = now + 1.5
 
         # Si cambió de vuelta, reiniciamos el seguidor de curva hablada
         if sample.completed_laps != self.current_lap_number:
@@ -180,25 +187,9 @@ class LocalAIEngineer:
                 self.last_speech_ts = now
 
                 default_advice = best_corner.anticipation_advice.format(dist=int(min_dist_m))
-                if self.gemini and self.gemini.is_available:
-                    ctx = {
-                        "track_name": self.track_knowledge.display_name if self.track_knowledge else sample.track_name,
-                        "car_model": sample.car_model,
-                        "corner_name": best_corner.name,
-                        "distance_m": int(min_dist_m),
-                        "speed_kmh": sample.speed_kmh,
-                        "gear": best_corner.gear,
-                        "braking_marker": best_corner.braking_marker,
-                    }
-
-                    def _on_gemini_anticipate(g_text: str, g_cat: str) -> None:
-                        # Si aún estamos aproximándonos a esa curva
-                        if self.upcoming_corner_data and self.upcoming_corner_data.get("id") == best_corner.id:
-                            self._broadcast_radio(g_text, g_cat)
-
-                    self.gemini.generate_radio_advice_async("anticipation", ctx, _on_gemini_anticipate)
-                else:
-                    self._broadcast_radio(default_advice, "anticipation")
+                # La anticipación de frenada es de alta velocidad y crítica en tiempo real:
+                # la emitimos de inmediato por Edge Neural sin latencias de red para clavar la frenada
+                self._broadcast_radio(default_advice, "anticipation")
 
         # 4. EVALUACIÓN DENTRO DE LA CURVA
         for corner in self.track_knowledge.corners:

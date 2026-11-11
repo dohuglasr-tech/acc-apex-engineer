@@ -30,7 +30,7 @@ DEFAULT_SUPABASE_ANON_KEY = (
 )
 DEFAULT_AGENT_TOKEN = "e4b029a1-8d25-4c07-96a1-f76159c1182e"
 DEFAULT_GEMINI_KEY = ""
-WEB_DASHBOARD_URL = "https://acc-apex-engineer-dg-aa6f.vercel.app/dashboard"
+WEB_DASHBOARD_URL = "https://acc-apex-engineer.vercel.app/dashboard"
 
 
 def load_agent_config() -> Dict[str, Any]:
