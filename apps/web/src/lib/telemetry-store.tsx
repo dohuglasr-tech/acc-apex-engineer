@@ -396,7 +396,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
           state.setups.map((s: Record<string, unknown>) => ({
             id: String(s.id),
             version_num: Number(s.version_num || 1),
-            file_name: String(s.file_name || "APEX_AUTO_LIVE.json"),
+            file_name: String(s.file_name || "APEX_SETUP_1.json"),
             full_path: `Documents\\Assetto Corsa Competizione\\Setups\\${s.car_model}\\${s.track_name}\\${s.file_name}`,
             car_model: String(s.car_model || "gt3"),
             track_name: String(s.track_name || "circuit"),

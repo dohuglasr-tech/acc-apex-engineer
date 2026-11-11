@@ -175,8 +175,11 @@ class VoiceEngineer:
         lap_number: int,
         lap_time_ms: int,
         version_num: int,
-        primary_error: Optional[str],
-        input_mode: str,
+        slot_num: int = 1,
+        slot_name: str = "APEX_SETUP_1",
+        primary_error: Optional[str] = None,
+        input_mode: str = "gamepad",
+        road_temp: float = 30.0,
     ) -> None:
         if not self.enabled or lap_time_ms <= 0:
             return
@@ -186,17 +189,34 @@ class VoiceEngineer:
         sec_whole = int(seconds)
         tenths = int((seconds - sec_whole) * 10)
 
-        # Frases amigables y concisas en español natural
-        msg = f"¡Buena vuelta! {minutes} {sec_whole:02d} punto {tenths}. Setup actualizado en garaje."
+        input_name = {
+            "keyboard": "teclado",
+            "gamepad": "mando",
+            "wheel": "volante",
+        }.get(input_mode, "mando")
 
+        # Explicación clara al piloto de F1:
+        # - Vuelta y tiempo registrado
+        # - Creación del setup en garaje en una de las 3 ranuras (APEX_SETUP_1/2/3)
+        # - Adaptado al periférico (mando/volante), temperatura de asfalto y telemetría
+        # - Instrucción para cargarlo al entrar a boxes
+        advice = ""
         if primary_error:
             err_lower = primary_error.lower()
             if "trail-braking" in err_lower or "freno" in err_lower:
-                msg += " Suelta el freno más despacio hacia el vértice."
+                advice = "Suelta el freno más progresivo hacia el vértice."
             elif "scrubbing" in err_lower or "dirección" in err_lower:
-                msg += " Cuida las gomas delanteras, gira menos el volante."
+                advice = "Cuida las gomas delanteras, gira menos volante."
             elif "tracción" in err_lower or "tc" in err_lower:
-                msg += " Espera a enderezar antes de pisar a fondo."
+                advice = "Endereza la dirección antes de acelerar a fondo."
+
+        slot_label = f"APEX SETUP {slot_num}"
+        time_text = f"{minutes} {sec_whole:02d} punto {tenths}" if minutes > 0 else f"{sec_whole:02d} punto {tenths}"
+        msg = (
+            f"Vuelta {lap_number}: {time_text}. "
+            f"He creado el setup {slot_label} en tu garaje, adaptado a tu {input_name} y a los {road_temp:.0f} grados de pista. "
+            f"{advice} Cárgalo en boxes cuando entres."
+        ).strip()
 
         self.speak(msg)
 

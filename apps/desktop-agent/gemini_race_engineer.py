@@ -34,10 +34,18 @@ REGLAS DE COMUNICACIÓN POR RADIO:
 1. Habla en ESPAÑOL fluido, amigable, respetuoso pero enérgico, técnico y enfocado en ganar décimas (100% natural, como en la F1 real).
 2. TUS TRANSMISIONES DEBEN SER BREVES Y DIRECTAS:
    - Durante la vuelta / frenada: 1 frase corta y clara (máximo 14 palabras) para no desconcentrar al piloto a alta velocidad.
-   - Resumen al cruzar la meta: 1 o 2 frases rápidas con el tiempo, la mejora/delta y la corrección de setup o gomas.
+   - Resumen al cruzar la meta: 2 frases rápidas informando el tiempo/delta, el setup creado en garaje para boxes y el consejo de manejo.
 3. Sé analítico con el mando: cuando veas sobreviraje, bloqueo o subviraje, aconseja sobre la suavidad del stick analógico y el recorrido de los gatillos.
 4. Jamás uses emoticonos, asteriscos, comillas ni formato markdown en los mensajes de radio (se reproducirán directamente por voz).
 5. Usa números en palabras cuando sea más fácil de pronunciar ("cien metros", "segunda marcha", "dos veintiséis").
+6. REGLA FUNDAMENTAL DE SETUPS (ASSETTO CORSA COMPETIZIONE):
+   El simulador ACC NO permite montar ni cambiar setups en pista mientras se conduce.
+   El sistema de ingeniería genera el setup en el garaje en 3 ranuras rotativas: APEX_SETUP_1, APEX_SETUP_2 o APEX_SETUP_3.
+   JAMÁS digas "setup montado", "setup inyectado en el coche" ni "setup aplicado automáticamente".
+   Debes decirle al piloto:
+   a) Que has creado y guardado el setup en su garaje (por ejemplo: "He creado el setup APEX SETUP 1 en tu garaje").
+   b) Que fue adaptado a su modo de manejo (mando o volante), a las condiciones de pista (temperatura de asfalto/clima) y a su telemetría.
+   c) Que lo cargue manualmente en el menú de garaje cuando entre a boxes.
 """
 
 
@@ -143,6 +151,7 @@ class GeminiRaceEngineer:
             if not prompt:
                 return
 
+            max_tok = 95 if event_type == "lap_summary" else 50
             for model in [self.model_name] + [m for m in SUPPORTED_MODELS if m != self.model_name]:
                 try:
                     response = self.client.models.generate_content(
@@ -151,7 +160,7 @@ class GeminiRaceEngineer:
                         config=types.GenerateContentConfig(
                             system_instruction=GEMINI_SYSTEM_INSTRUCTION,
                             temperature=0.7,
-                            max_output_tokens=50,
+                            max_output_tokens=max_tok,
                         ),
                     )
                     text = (response.text or "").strip()
@@ -202,11 +211,17 @@ class GeminiRaceEngineer:
         elif event_type == "lap_summary":
             delta_str = ctx.get("delta_str", "")
             tyres = ctx.get("tyre_wear_pct", "")
+            slot_name = ctx.get("slot_name", f"APEX_SETUP_{((setup_ver - 1) % 3) + 1}")
+            input_mode_es = ctx.get("input_mode_es", "mando")
+            track_cond = ctx.get("track_cond", "condiciones de pista")
+            setup_reason = ctx.get("setup_reason", "calibración térmica y estabilidad")
             return (
-                f"Vuelta completada en {track} con tiempo {lap_time} {delta_str}. "
-                f"Gomas: {tyres}. Inyectado setup v{setup_ver}. "
-                f"Telemetría: {error or 'buen ritmo y consistencia'}. "
-                f"Dale un informe de meta por radio como ingeniero de F1 en 1 frase rápida, enérgica y cercana."
+                f"El piloto completó vuelta en {track} con tiempo {lap_time} ({delta_str}). "
+                f"Desgaste de gomas: {tyres}. Condiciones de pista: {track_cond}. Periférico: {input_mode_es}. "
+                f"Has creado y guardado en su garaje el setup '{slot_name}' adaptado a su {input_mode_es}, a los {track_cond} y a su telemetría ({setup_reason}). "
+                f"Comunícale por radio como ingeniero de pista de F1 (en 2 frases enérgicas, profesionales y directas): "
+                f"1) Su tiempo y si mejoró o no ({delta_str}). "
+                f"2) Que le creaste '{slot_name}' en su garaje adaptado a su {input_mode_es} y a la pista, y que lo cargue cuando entre a boxes."
             )
         elif event_type == "car_alert":
             alert = ctx.get("alert_reason", "presiones")

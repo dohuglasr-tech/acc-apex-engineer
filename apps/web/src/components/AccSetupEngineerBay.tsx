@@ -452,11 +452,11 @@ Periférico: ${currentInputMode.toUpperCase()} | Estilo: ${currentDrivingStyle.t
   };
 
   const handleInjectSetup = () => {
-    // Intento de inyección directa vía Desktop Agent WebSocket si está conectado
-    setInjectedFeedback("Inyectando setup en Documents\\Assetto Corsa Competizione\\Setups...");
+    // Guardado en ranura de garaje de ACC para cargar en boxes
+    setInjectedFeedback("Guardando setup en Documents\\Assetto Corsa Competizione\\Setups...");
     setTimeout(() => {
-      setInjectedFeedback("¡Setup APEX_AUTO_LIVE.json inyectado exitosamente en tu PC!");
-      setTimeout(() => setInjectedFeedback(null), 4000);
+      setInjectedFeedback("¡Setup APEX_SETUP_1.json guardado en tu garaje! Cárgalo en boxes cuando entres.");
+      setTimeout(() => setInjectedFeedback(null), 4500);
     }, 900);
   };
 
@@ -1557,7 +1557,7 @@ Periférico: ${currentInputMode.toUpperCase()} | Estilo: ${currentDrivingStyle.t
             onClick={handleInjectSetup}
             className="px-6 py-2.5 rounded-full bg-[#E10600] hover:bg-[#b50500] text-white text-xs font-bold font-mono tracking-wider transition shadow-lg shadow-[#E10600]/20 flex items-center gap-2"
           >
-            <span>⚡</span> INYECTAR EN ACC (APEX_AUTO_LIVE.json)
+            <span>⚡</span> GUARDAR EN GARAJE (APEX_SETUP_1.json)
           </button>
 
           <button

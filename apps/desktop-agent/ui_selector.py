@@ -93,7 +93,7 @@ class InputModeSelectorWindow:
         root: tk.Tk,
         config: Dict[str, Any],
         on_config_applied: Callable[[Dict[str, Any]], None],
-        on_test_gemini: Optional[Callable[[], Tuple[bool, str]]] = None,
+        on_test_gemini: Callable[[], tuple[bool, str]] | None = None,
     ) -> None:
         self.root = root
         self.config = config

@@ -310,10 +310,12 @@ class AutoSetupInjector:
         best_lap_ms: Optional[int] = None,
         tyre_temps_imo: Optional[List[List[float]]] = None,
         curb_strikes: int = 0,
-    ) -> Tuple[Path, Dict[str, Any], List[Dict[str, str]], int]:
+    ) -> Tuple[Path, Dict[str, Any], List[Dict[str, str]], int, int]:
         """
         Ajusta y calibra la totalidad del coche tocando cada área del setup según
-        los 3 pilares maestros. Escribe APEX_AUTO_LIVE.json y guarda el resumen completo.
+        los 3 pilares maestros. Guarda el setup en una de las 3 ranuras rotativas
+        (APEX_SETUP_1.json, APEX_SETUP_2.json o APEX_SETUP_3.json) para que el
+        piloto lo cargue en boxes sin saturar su menú de setups en ACC.
         """
         key = f"{car_model}:{track_name}:{self.input_mode}:{self.driving_style}"
         prev_setup = self.current_setups.get(key) or create_base_acc_setup(
@@ -621,17 +623,36 @@ class AutoSetupInjector:
             ),
         })
 
-        # Guardar en memoria y en disco
+        # Manejo de exactamente 3 ranuras rotativas en disco (APEX_SETUP_1, 2 y 3)
         version_num = self.version_counter.get(key, 0) + 1
         self.version_counter[key] = version_num
         self.current_setups[key] = new_setup
 
+        slot_num = ((version_num - 1) % 3) + 1
+        slot_name = f"APEX_SETUP_{slot_num}"
+        file_name = f"{slot_name}.json"
+
         target_dir = self._safe_target_dir(car_model, track_name)
-        live_file = target_dir / "APEX_AUTO_LIVE.json"
-        versioned_file = target_dir / f"APEX_V{version_num}_{self.input_mode.upper()}_{self.driving_style.upper()}.json"
+        slot_file = target_dir / file_name
 
+        # Escribir o sobrescribir de forma cíclica la ranura activa
         serialized = json.dumps(new_setup, indent=2)
-        live_file.write_text(serialized, encoding="utf-8")
-        versioned_file.write_text(serialized, encoding="utf-8")
+        slot_file.write_text(serialized, encoding="utf-8")
 
-        return live_file, new_setup, changes, version_num
+        # Limpiar cualquier residuo de versiones ilimitadas anteriores para mantener limpio el menú de ACC
+        try:
+            for old_f in target_dir.glob("APEX_V*.json"):
+                try:
+                    old_f.unlink()
+                except Exception:
+                    pass
+            legacy_live = target_dir / "APEX_AUTO_LIVE.json"
+            if legacy_live.exists():
+                try:
+                    legacy_live.unlink()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        return slot_file, new_setup, changes, version_num, slot_num

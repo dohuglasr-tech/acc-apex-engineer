@@ -343,7 +343,7 @@ class ApexDesktopAgentApp:
                 time.sleep(sleep_for)
 
     def _handle_completed_lap(self, lap: CompletedLapAnalysis) -> None:
-        live_path, setup_json, changes, version_num = self.injector.inject_optimized_setup(
+        live_path, setup_json, changes, version_num, slot_num = self.injector.inject_optimized_setup(
             car_model=lap.car_model,
             track_name=lap.track_name,
             hot_pressures=lap.tyre_pressures_hot,
@@ -360,8 +360,11 @@ class ApexDesktopAgentApp:
             curb_strikes=lap.curb_strikes,
         )
 
+        slot_name = f"APEX_SETUP_{slot_num}"
         self.latest_setup_event = {
             "version_num": version_num,
+            "slot_num": slot_num,
+            "slot_name": slot_name,
             "file_name": live_path.name,
             "full_path": str(live_path),
             "car_model": lap.car_model,
@@ -381,7 +384,7 @@ class ApexDesktopAgentApp:
             "telemetry_trace": lap.telemetry_trace,
         }
 
-        self.hud.set_setup_status(f"APEX_AUTO_LIVE.json (v{version_num})")
+        self.hud.set_setup_status(f"{slot_name}.json en garaje (Boxes)")
         if self.ai_engineer.voice_mode == "telemetry":
             lap_sec = round(lap.lap_time_ms / 1000.0, 3)
             mins = int(lap_sec // 60)
@@ -414,13 +417,28 @@ class ApexDesktopAgentApp:
                         delta_str = f"+{d_sec:.2f} segundos más lento"
                 self._last_completed_lap_ms = lap.lap_time_ms
 
+                input_mode_es = {
+                    "keyboard": "teclado",
+                    "gamepad": "mando",
+                    "wheel": "volante FFB",
+                }.get(lap.input_mode, "mando")
+
+                track_cond = f"asfalto a {lap.road_temp:.0f}°C, aire {lap.air_temp:.0f}°C"
+                reasons = [c.get("reason", "") for c in changes if c.get("reason")][:2]
+                reason_summary = " y ".join(reasons) if reasons else "presiones térmicas y equilibrio dinámico"
+
                 ctx = {
                     "track_name": lap.track_name,
                     "car_model": lap.car_model,
                     "lap_time_str": time_str,
                     "delta_str": delta_str,
                     "setup_version": version_num,
+                    "slot_num": slot_num,
+                    "slot_name": slot_name,
                     "input_mode": lap.input_mode,
+                    "input_mode_es": input_mode_es,
+                    "track_cond": track_cond,
+                    "setup_reason": reason_summary,
                     "primary_error": primary_err or "trazada constante",
                     "tyre_wear_pct": f"{avg_wear}% (DI {wear_pcts[0]}%, DD {wear_pcts[1]}%, TI {wear_pcts[2]}%, TD {wear_pcts[3]}%)",
                 }
@@ -434,8 +452,11 @@ class ApexDesktopAgentApp:
                     lap_number=lap.lap_number,
                     lap_time_ms=lap.lap_time_ms,
                     version_num=version_num,
+                    slot_num=slot_num,
+                    slot_name=slot_name,
                     primary_error=primary_err,
                     input_mode=lap.input_mode,
+                    road_temp=lap.road_temp,
                 )
         self.cloud_sync.sync_lap_and_setup_async(
             lap=lap,

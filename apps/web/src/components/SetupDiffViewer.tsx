@@ -11,7 +11,7 @@ export function SetupDiffViewer({ setup }: { setup: UserSetupRecord }) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = setup.file_name || "APEX_AUTO_LIVE.json";
+    a.download = setup.file_name || "APEX_SETUP_1.json";
     a.click();
     URL.revokeObjectURL(url);
   };

@@ -292,8 +292,8 @@ class OverlayHUD:
         self.win.configure(bg="#08080A")
 
         screen_w = self.win.winfo_screenwidth()
-        # Dimensiones optimizadas para acomodar el avatar y los subtítulos
-        self.win.geometry(f"520x175+{screen_w - 540}+24")
+        # Dimensiones optimizadas para acomodar el avatar, telemetría y subtítulos
+        self.win.geometry(f"520x192+{screen_w - 540}+24")
 
         self._build_widgets()
         self.win.after(150, self._apply_click_through)
@@ -386,10 +386,20 @@ class OverlayHUD:
         )
         self.lbl_tyres.pack(anchor="w")
 
-        # Estado del setup / alerta
+        # Desgaste de neumáticos y combustible
+        self.lbl_wear = tk.Label(
+            telemetry_col,
+            text="GOMAS: 0% DESGASTE (100% VIDA) | --.-L",
+            fg="#10B981",
+            bg="#08080A",
+            font=("Consolas", 8),
+        )
+        self.lbl_wear.pack(anchor="w")
+
+        # Estado del setup rotativo en garaje / alerta
         self.lbl_setup = tk.Label(
             telemetry_col,
-            text=f"SETUP: {self.last_setup_label}",
+            text=f"GARAJE: {self.last_setup_label}",
             fg="#A1A1AA",
             bg="#08080A",
             font=("Consolas", 8),
@@ -450,7 +460,7 @@ class OverlayHUD:
 
     def set_setup_status(self, status_text: str) -> None:
         self.last_setup_label = status_text
-        self.lbl_setup.configure(text=f"SETUP: {status_text}")
+        self.lbl_setup.configure(text=f"GARAJE: {status_text}", fg="#10B981")
 
     def update_telemetry(
         self,
@@ -513,15 +523,17 @@ class OverlayHUD:
             fg=psi_color,
         )
 
+        w = sample.tyre_wear or [3.0, 3.0, 3.0, 3.0]
+        w_pct = [round(max(0.0, min(100.0, (1.0 - (val / 3.0)) * 100.0))) for val in w]
+        avg_w = int(sum(w_pct) / 4.0)
+        avg_life = max(0, 100 - avg_w)
+        wear_color = "#10B981" if avg_w < 15 else ("#F59E0B" if avg_w < 35 else "#EF4444")
+        self.lbl_wear.configure(
+            text=f"GOMAS: {avg_w}% DESGASTE ({avg_life}% VIDA) · DI {w_pct[0]}% DD {w_pct[1]}% TI {w_pct[2]}% TD {w_pct[3]}% | {sample.fuel:.1f}L",
+            fg=wear_color,
+        )
+
         if live_alert:
             self.lbl_setup.configure(text=f"AVISO: {live_alert}", fg="#E10600")
         else:
-            w = sample.tyre_wear or [3.0, 3.0, 3.0, 3.0]
-            w_pct = [round(max(0.0, min(100.0, (1.0 - (val / 3.0)) * 100.0))) for val in w]
-            avg_w = int(sum(w_pct) / 4.0)
-            avg_life = max(0, 100 - avg_w)
-            wear_color = "#10B981" if avg_w < 15 else ("#F59E0B" if avg_w < 35 else "#EF4444")
-            self.lbl_setup.configure(
-                text=f"DESGASTE {avg_w}% ({avg_life}% VIDA) · DI {w_pct[0]}% DD {w_pct[1]}% TI {w_pct[2]}% TD {w_pct[3]}% | {sample.fuel:.1f}L",
-                fg=wear_color,
-            )
+            self.lbl_setup.configure(text=f"GARAJE: {self.last_setup_label}", fg="#A1A1AA")
