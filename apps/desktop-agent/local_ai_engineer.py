@@ -189,10 +189,29 @@ class LocalAIEngineer:
                 self.last_spoken_corner_id = corner_key
                 self.last_speech_ts = now
 
-                default_advice = best_corner.anticipation_advice.format(dist=int(min_dist_m))
-                # La anticipación de frenada es de alta velocidad y crítica en tiempo real:
-                # la emitimos de inmediato por Edge Neural sin latencias de red para clavar la frenada
-                self._broadcast_radio(default_advice, "anticipation")
+                # Variaciones dinámicas estilo F1 por vuelta para no repetir el mismo texto
+                lap_idx = sample.completed_laps
+                dist_round = int(min_dist_m)
+                marker = best_corner.braking_marker
+                gear = best_corner.gear
+
+                if lap_idx <= 1:
+                    advice = f"Aproximando a {best_corner.name} en {dist_round} metros. Frena en {marker} y baja a {gear}ª."
+                elif lap_idx % 3 == 0:
+                    if "T1" in best_corner.id:
+                        advice = f"{best_corner.name} en {dist_round}m. Frena en el 100, no des tope al stick."
+                    elif "T7" in best_corner.id or "Combes" in best_corner.name:
+                        advice = f"Viene Les Combes. Cartel de 100, suelta el gatillo con suavidad."
+                    elif "Bus" in best_corner.name or "T18" in best_corner.id:
+                        advice = f"Chicana Bus Stop. Frenada firme en el 150 y rotación limpia."
+                    else:
+                        advice = f"Viene {best_corner.name}. Referencia en {marker}, marcha {gear}."
+                elif lap_idx % 2 == 0:
+                    advice = f"{best_corner.name}, frena en {marker}, baja a {gear}ª."
+                else:
+                    advice = f"{best_corner.name} adelante. Apura a {marker} y busca tracción limpia."
+
+                self._broadcast_radio(advice, "anticipation")
 
         # 4. EVALUACIÓN DENTRO DE LA CURVA
         for corner in self.track_knowledge.corners:
@@ -281,8 +300,8 @@ class LocalAIEngineer:
                 # Solo en modo "companion" (Acompañante)
                 if (
                     self.voice_mode == "companion"
-                    and (now - self.last_speech_ts) >= 7.0
-                    and (score < 85 or (score >= 95 and (sample.completed_laps % 2 == 0)))
+                    and (now - self.last_speech_ts) >= 5.0
+                    and (score < 88 or (score >= 93 and (sample.completed_laps % 2 == 0)))
                 ):
                     self.last_speech_ts = now
                     # Si Google Gemini está activo, generar consejo inteligente y adaptativo
@@ -293,12 +312,13 @@ class LocalAIEngineer:
                             "corner_name": c.name,
                             "score": score,
                             "speed_delta": speed_delta,
+                            "input_mode": self.input_mode,
                             "primary_error": (
-                                "frenada sin trail-braking"
+                                "frenada sin trail-braking (soltado brusco del gatillo)"
                                 if not self.in_corner_had_trail
-                                else "fricción excesiva de dirección"
+                                else "fricción excesiva de dirección (stick forzado a tope)"
                                 if self.in_corner_scrub_frames > 15
-                                else "corte de tracción por pisar pronto"
+                                else "corte de tracción por pisar pronto con volante girado"
                                 if self.in_corner_tc_cuts > 10
                                 else ""
                             ),

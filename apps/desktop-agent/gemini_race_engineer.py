@@ -22,24 +22,22 @@ except ImportError:
 
 DEFAULT_GEMINI_KEY = ""
 SUPPORTED_MODELS = [
-    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
     "gemini-3.8-flash",
-    "gemini-3.5-flash",
-    "gemini-2.5-flash",
 ]
 
 GEMINI_SYSTEM_INSTRUCTION = """
-Eres Álvaro, el Jefe e Ingeniero de Pista de Carrera (Race Engineer) de élite estilo F1 y WEC (como Bono o GP) para un piloto que conduce en Assetto Corsa Competizione (ACC).
-Tu piloto está conduciendo un GT3 en pista y te comunicas con él por la RADIO DEL EQUIPO en tiempo real.
+Eres Álvaro, el Jefe e Ingeniero de Pista de Carrera (Race Engineer) de élite estilo F1 y WEC (como Bono o GP) para un piloto en Assetto Corsa Competizione (ACC).
+Te comunicas con él exclusivamente por la RADIO DEL EQUIPO durante la sesión en pista.
 
 REGLAS DE COMUNICACIÓN POR RADIO:
-1. Habla en ESPAÑOL fluido, amigable, respetuoso pero enérgico y enfocado en el rendimiento (100% natural, sin sonar como robot).
-2. TUS TRANSMISIONES DEBEN SER BREVES Y CONCISAS:
-   - Durante la vuelta / aproximación a curvas: 1 frase corta y directa (máximo 12-16 palabras) porque el piloto va a más de 200 km/h.
-   - Resumen al cruzar la meta: 1 o 2 frases rápidas con el tiempo y el cambio de setup.
-3. Sé predictivo y analítico: menciona referencias de frenada ("cartel de 100", "frena antes de la línea blanca"), marchas ("baja a 2ª", "sal en 3ª para traccionar") y estado del coche.
-4. Jamás uses emoticonos, asteriscos ni formato markdown en los mensajes de radio (se reproducirán directamente por voz).
-5. Usa números en palabras cuando sea más fácil de pronunciar ("cien metros", "segunda marcha").
+1. Habla en ESPAÑOL fluido, amigable, respetuoso pero enérgico, técnico y enfocado en ganar décimas (100% natural, como en la F1 real).
+2. TUS TRANSMISIONES DEBEN SER BREVES Y DIRECTAS:
+   - Durante la vuelta / frenada: 1 frase corta y clara (máximo 14 palabras) para no desconcentrar al piloto a alta velocidad.
+   - Resumen al cruzar la meta: 1 o 2 frases rápidas con el tiempo, la mejora/delta y la corrección de setup o gomas.
+3. Sé analítico con el mando: cuando veas sobreviraje, bloqueo o subviraje, aconseja sobre la suavidad del stick analógico y el recorrido de los gatillos.
+4. Jamás uses emoticonos, asteriscos, comillas ni formato markdown en los mensajes de radio (se reproducirán directamente por voz).
+5. Usa números en palabras cuando sea más fácil de pronunciar ("cien metros", "segunda marcha", "dos veintiséis").
 """
 
 
@@ -49,7 +47,7 @@ class GeminiRaceEngineer:
     Genera transmisiones de radio inteligentes y adaptativas basadas en la telemetría en vivo.
     """
 
-    def __init__(self, api_key: str = "", model_name: str = "gemini-3.5-flash-lite") -> None:
+    def __init__(self, api_key: str = "", model_name: str = "gemini-3.1-flash-lite") -> None:
         self.api_key = (api_key or os.environ.get("GEMINI_API_KEY", "") or DEFAULT_GEMINI_KEY).strip()
         self.model_name = model_name
         self.client: Optional[Any] = None
@@ -188,23 +186,27 @@ class GeminiRaceEngineer:
         if event_type == "anticipation":
             marker = ctx.get("braking_marker", "cartel de 100")
             return (
-                f"El piloto va a {int(speed)} km/h en la recta aproximándose a {corner} en {track} (a {dist} metros). "
-                f"Referencia de frenada: {marker}, marcha sugerida: {gear}ª. "
+                f"El piloto va a {int(speed)} km/h aproximándose a {corner} en {track} (a {dist} metros). "
+                f"Referencia de frenada: {marker}, marcha: {gear}ª. Conduce con: {ctx.get('input_mode', 'mando')}. "
                 f"Cántale la curva por radio con 1 sola orden breve, urgente y natural (máximo 12 palabras)."
             )
         elif event_type == "corner_exit":
             score = ctx.get("score", 85)
             speed_delta = ctx.get("speed_delta", 0)
             return (
-                f"El piloto acaba de salir de {corner} en {track}. Puntuación: {score}/100. "
-                f"Delta de velocidad en vértice: {speed_delta:+.1f} km/h. Error observado: {error or 'ninguno, paso perfecto'}. "
-                f"Dale 1 consejo rápido o felicitación por radio en 1 sola frase corta."
+                f"El piloto salió de {corner} en {track}. Puntuación: {score}/100. "
+                f"Delta de velocidad: {speed_delta:+.1f} km/h. Conduce con: {ctx.get('input_mode', 'mando')}. "
+                f"Error observado: {error or 'ninguno, trazada perfecta'}. "
+                f"Dale 1 consejo constructivo o felicitación por radio en 1 sola frase corta (máximo 14 palabras)."
             )
         elif event_type == "lap_summary":
+            delta_str = ctx.get("delta_str", "")
+            tyres = ctx.get("tyre_wear_pct", "")
             return (
-                f"Vuelta completada en {track} con tiempo {lap_time}. Se inyectó setup versión {setup_ver}. "
-                f"Comportamiento del piloto: {error or 'vuelta sólida'}. "
-                f"Dale un informe de meta por radio en 1 frase enérgica y amigable."
+                f"Vuelta completada en {track} con tiempo {lap_time} {delta_str}. "
+                f"Gomas: {tyres}. Inyectado setup v{setup_ver}. "
+                f"Telemetría: {error or 'buen ritmo y consistencia'}. "
+                f"Dale un informe de meta por radio como ingeniero de F1 en 1 frase rápida, enérgica y cercana."
             )
         elif event_type == "car_alert":
             alert = ctx.get("alert_reason", "presiones")

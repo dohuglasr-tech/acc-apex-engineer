@@ -246,6 +246,7 @@ class ApexDesktopAgentApp:
         self.latest_sample: Optional[TelemetrySample] = None
         self.latest_setup_event: Optional[Dict[str, Any]] = None
         self.latest_lap_event: Optional[Dict[str, Any]] = None
+        self._last_completed_lap_ms: int = 0
         self.running = True
         self._ws_clients: Set[Any] = set()
         self._last_cloud_push_ts: float = 0.0
@@ -403,11 +404,23 @@ class ApexDesktopAgentApp:
                 w = self.latest_sample.tyre_wear if self.latest_sample else [3.0, 3.0, 3.0, 3.0]
                 wear_pcts = [round(max(0.0, min(100.0, (1.0 - (val / 3.0)) * 100.0))) for val in w]
                 avg_wear = int(sum(wear_pcts) / 4.0)
+
+                delta_str = ""
+                if self._last_completed_lap_ms > 0:
+                    d_sec = round((lap.lap_time_ms - self._last_completed_lap_ms) / 1000.0, 2)
+                    if d_sec < 0:
+                        delta_str = f"mejorando {abs(d_sec):.2f} segundos"
+                    else:
+                        delta_str = f"+{d_sec:.2f} segundos más lento"
+                self._last_completed_lap_ms = lap.lap_time_ms
+
                 ctx = {
                     "track_name": lap.track_name,
                     "car_model": lap.car_model,
                     "lap_time_str": time_str,
+                    "delta_str": delta_str,
                     "setup_version": version_num,
+                    "input_mode": lap.input_mode,
                     "primary_error": primary_err or "trazada constante",
                     "tyre_wear_pct": f"{avg_wear}% (DI {wear_pcts[0]}%, DD {wear_pcts[1]}%, TI {wear_pcts[2]}%, TD {wear_pcts[3]}%)",
                 }
