@@ -233,7 +233,10 @@ class ApexDesktopAgentApp:
         self.analyzer = TelemetryLapAnalyzer(input_mode=initial_mode)
         self.injector = AutoSetupInjector(input_mode=initial_mode, driving_style=initial_style)
         self.fuel_calculator = FuelStrategyCalculator()
-        self.voice = VoiceEngineer(enabled=bool(self.config.get("voice_enabled", True)))
+        self.voice = VoiceEngineer(
+            enabled=bool(self.config.get("voice_enabled", True)),
+            volume=int(self.config.get("voice_volume", 65)),
+        )
         gemini_key = self.config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
         self.gemini = GeminiRaceEngineer(api_key=gemini_key)
         self.ai_engineer = LocalAIEngineer(
@@ -260,6 +263,7 @@ class ApexDesktopAgentApp:
             config=self.config,
             on_config_applied=self._on_config_applied,
             on_test_gemini=self._on_test_gemini,
+            on_test_voice=self._on_test_voice,
         )
         self.hud = OverlayHUD(self.root, input_mode=initial_mode)
         self.hud.set_voice_mode(initial_voice)
@@ -290,6 +294,14 @@ class ApexDesktopAgentApp:
             self.voice.speak(f"Radio comprobada: {msg}", priority=True)
         return ok, msg
 
+    def _on_test_voice(self, vol: int) -> None:
+        self.voice.set_volume(vol)
+        self.config["voice_volume"] = vol
+        save_agent_config(self.config)
+        self.voice.speak(
+            f"Radio comprobada. Volumen al {vol} por ciento.", priority=True
+        )
+
     def _on_config_applied(self, updated_cfg: Dict[str, Any]) -> None:
         mode = updated_cfg.get("input_mode") or "gamepad"
         style = updated_cfg.get("driving_style") or "safe"
@@ -304,6 +316,8 @@ class ApexDesktopAgentApp:
         if updated_cfg.get("gemini_api_key") is not None:
             self.gemini.set_api_key(updated_cfg["gemini_api_key"])
         self.voice.enabled = bool(updated_cfg.get("voice_enabled", True))
+        if updated_cfg.get("voice_volume") is not None:
+            self.voice.set_volume(int(updated_cfg["voice_volume"]))
         self.cloud_sync.update_config(updated_cfg)
 
         def _ui_callback(success: bool, msg: str, username: str) -> None:
@@ -629,6 +643,15 @@ class ApexDesktopAgentApp:
                             self.config["driving_style"] = style
                             save_agent_config(self.config)
                             self.injector.set_driving_style(style)
+                        elif cmd.get("action") == "set_voice_volume" and cmd.get(
+                            "voice_volume"
+                        ) is not None:
+                            vol = max(0, min(100, int(cmd["voice_volume"])))
+                            self.config["voice_volume"] = vol
+                            save_agent_config(self.config)
+                            self.voice.set_volume(vol)
+                            if hasattr(self, "selector_ui"):
+                                self.root.after(0, lambda v=vol: self.selector_ui.set_volume(v))
                     except Exception:
                         pass
             except Exception:
@@ -647,6 +670,7 @@ class ApexDesktopAgentApp:
                                 "is_live_acc": True,
                                 "input_mode": self.config.get("input_mode") or "gamepad",
                                 "voice_mode": self.ai_engineer.voice_mode,
+                                "voice_volume": self.voice.volume,
                                 "live_alert": self.analyzer.live_alert,
                                 "sample": sample.to_dict(),
                                 "active_setup": self.injector.get_current_setup(
@@ -666,6 +690,7 @@ class ApexDesktopAgentApp:
                                 "is_live_acc": False,
                                 "input_mode": self.config.get("input_mode") or "gamepad",
                                 "voice_mode": self.ai_engineer.voice_mode,
+                                "voice_volume": self.voice.volume,
                             }
                         )
                     stale = set()

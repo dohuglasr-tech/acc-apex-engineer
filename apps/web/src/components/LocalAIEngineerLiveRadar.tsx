@@ -131,8 +131,15 @@ function AgentAvatarLiveWeb({ isTransmitting }: { isTransmitting: boolean }) {
 }
 
 export function LocalAIEngineerLiveRadar() {
-  const { engineerState, frame, isAccLive, voiceMode, setVoiceMode } =
-    useTelemetry();
+  const {
+    engineerState,
+    frame,
+    isAccLive,
+    voiceMode,
+    setVoiceMode,
+    voiceVolume,
+    setVoiceVolume,
+  } = useTelemetry();
   const [showHistory, setShowHistory] = useState(false);
 
   if (!isAccLive || !frame) return null;
@@ -286,6 +293,25 @@ export function LocalAIEngineerLiveRadar() {
               </button>
             );
           })}
+
+          {/* Control deslizante de Volumen de Radio */}
+          <div className="flex items-center gap-2.5 bg-black/60 px-3 py-1 rounded border border-zinc-800 ml-auto">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5 select-none">
+              <span>{voiceVolume <= 0 ? "🔇" : voiceVolume < 50 ? "🔉" : "🔊"}</span>
+              <span className="hidden xl:inline">VOLUMEN:</span>
+              <span className="text-white font-bold">{voiceVolume}%</span>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={voiceVolume}
+              onChange={(e) => setVoiceVolume(Number(e.target.value))}
+              className="w-16 sm:w-24 h-1.5 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-[#E10600]"
+              title="Ajustar volumen del ingeniero Álvaro"
+            />
+          </div>
         </div>
       </div>
 

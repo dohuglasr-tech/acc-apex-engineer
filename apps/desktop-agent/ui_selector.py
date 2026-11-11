@@ -47,6 +47,8 @@ def load_agent_config() -> Dict[str, Any]:
                 cfg["input_mode"] = "gamepad"
             if not cfg.get("driving_style"):
                 cfg["driving_style"] = "safe"
+            if cfg.get("voice_volume") is None:
+                cfg["voice_volume"] = 65
             if not cfg.get("gemini_api_key"):
                 cfg["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", DEFAULT_GEMINI_KEY)
             return cfg
@@ -60,6 +62,7 @@ def load_agent_config() -> Dict[str, Any]:
         "supabase_url": DEFAULT_SUPABASE_URL,
         "supabase_anon_key": DEFAULT_SUPABASE_ANON_KEY,
         "voice_enabled": True,
+        "voice_volume": 65,
         "gemini_api_key": os.environ.get("GEMINI_API_KEY", DEFAULT_GEMINI_KEY),
     }
 
@@ -94,15 +97,17 @@ class InputModeSelectorWindow:
         config: Dict[str, Any],
         on_config_applied: Callable[[Dict[str, Any]], None],
         on_test_gemini: Callable[[], tuple[bool, str]] | None = None,
+        on_test_voice: Callable[[int], None] | None = None,
     ) -> None:
         self.root = root
         self.config = config
         self.on_config_applied = on_config_applied
         self.on_test_gemini = on_test_gemini
+        self.on_test_voice = on_test_voice
         self.linked_username: str = ""
 
         self.root.title("ACC APEX ENGINEER // AGENTE DE TELEMETRÍA")
-        self.root.geometry("660x880")
+        self.root.geometry("660x900")
         self.root.configure(bg="#08080A")
         self.root.resizable(False, False)
 
@@ -113,13 +118,15 @@ class InputModeSelectorWindow:
             value=config.get("agent_token") or DEFAULT_AGENT_TOKEN
         )
         self.voice_var = tk.BooleanVar(value=bool(config.get("voice_enabled", True)))
+        self.volume_var = tk.IntVar(value=int(config.get("voice_volume", 65)))
         self.gemini_key_var = tk.StringVar(
             value=config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
         )
 
-        # Auto-guardado instantáneo de Token y Gemini Key en cada pulsación o pegado
+        # Auto-guardado instantáneo de Token, Gemini Key y Volumen en cada cambio
         self.token_var.trace_add("write", self._on_field_auto_save)
         self.gemini_key_var.trace_add("write", self._on_field_auto_save)
+        self.volume_var.trace_add("write", self._on_volume_auto_save)
 
         # Protocolo de cierre de ventana para asegurar que todo quede guardado en disco
         self.root.protocol("WM_DELETE_WINDOW", self._on_window_close)
@@ -360,6 +367,89 @@ class InputModeSelectorWindow:
             font=("Segoe UI", 9),
         ).pack(anchor="w")
 
+        # Control interactivo de volumen del agente (Álvaro)
+        vol_box = tk.Frame(
+            step2,
+            bg="#0E0E14",
+            padx=10,
+            pady=7,
+            highlightbackground="#27272A",
+            highlightthickness=1,
+        )
+        vol_box.pack(fill="x", pady=(6, 3))
+
+        vol_top = tk.Frame(vol_box, bg="#0E0E14")
+        vol_top.pack(fill="x")
+
+        vol_val = self.volume_var.get()
+        icon = "🔇" if vol_val <= 0 else ("🔉" if vol_val < 50 else "🔊")
+        self.lbl_volume = tk.Label(
+            vol_top,
+            text=f"{icon} VOLUMEN DEL INGENIERO (ÁLVARO): {vol_val}%",
+            fg="#FFFFFF",
+            bg="#0E0E14",
+            font=("Consolas", 8, "bold"),
+        )
+        self.lbl_volume.pack(side="left")
+
+        self.btn_test_vol = tk.Button(
+            vol_top,
+            text="PROBAR AUDIO",
+            command=self._handle_test_voice,
+            bg="#27272A",
+            fg="#FFFFFF",
+            activebackground="#E10600",
+            activeforeground="#FFFFFF",
+            font=("Segoe UI", 7, "bold"),
+            padx=8,
+            pady=1,
+            relief="flat",
+            cursor="hand2",
+        )
+        self.btn_test_vol.pack(side="right")
+
+        vol_slider_row = tk.Frame(vol_box, bg="#0E0E14")
+        vol_slider_row.pack(fill="x", pady=(3, 1))
+
+        self.slider_vol = tk.Scale(
+            vol_slider_row,
+            from_=0,
+            to=100,
+            orient="horizontal",
+            variable=self.volume_var,
+            command=self._on_slider_move,
+            bg="#0E0E14",
+            fg="#71717A",
+            troughcolor="#22222E",
+            activebackground="#E10600",
+            highlightthickness=0,
+            bd=0,
+            showvalue=False,
+            sliderrelief="flat",
+            cursor="hand2",
+        )
+        self.slider_vol.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        preset_frame = tk.Frame(vol_slider_row, bg="#0E0E14")
+        preset_frame.pack(side="right")
+
+        for p_val, p_lbl in [(30, "SUAVE"), (65, "MEDIO"), (100, "MÁX")]:
+            btn_p = tk.Button(
+                preset_frame,
+                text=p_lbl,
+                command=lambda v=p_val: self._set_volume_preset(v),
+                bg="#1E1E26",
+                fg="#A1A1AA",
+                activebackground="#E10600",
+                activeforeground="#FFFFFF",
+                font=("Segoe UI", 7, "bold"),
+                padx=5,
+                pady=1,
+                relief="flat",
+                cursor="hand2",
+            )
+            btn_p.pack(side="left", padx=2)
+
         # SECCIÓN 3: GOOGLE GEMINI AI
         step3 = tk.Frame(self.root, bg="#08080A", padx=20, pady=4)
         step3.pack(fill="x")
@@ -481,6 +571,48 @@ class InputModeSelectorWindow:
                     text="○ MOTOR ANALÍTICO LOCAL (SIN CLAVE)", fg="#71717A"
                 )
 
+    def _update_volume_label(self, vol: int) -> None:
+        if not hasattr(self, "lbl_volume"):
+            return
+        icon = "🔇" if vol <= 0 else ("🔉" if vol < 50 else "🔊")
+        self.lbl_volume.configure(text=f"{icon} VOLUMEN DEL INGENIERO (ÁLVARO): {vol}%")
+
+    def _on_slider_move(self, val: str) -> None:
+        try:
+            vol = int(float(val))
+            self._update_volume_label(vol)
+            self.config["voice_volume"] = vol
+            save_agent_config(self.config)
+            self.on_config_applied(self.config)
+        except Exception:
+            pass
+
+    def _set_volume_preset(self, vol: int) -> None:
+        self.volume_var.set(vol)
+        self._update_volume_label(vol)
+        self.config["voice_volume"] = vol
+        save_agent_config(self.config)
+        self.on_config_applied(self.config)
+
+    def _on_volume_auto_save(self, *args: Any) -> None:
+        try:
+            vol = int(self.volume_var.get())
+            self._update_volume_label(vol)
+            self.config["voice_volume"] = vol
+            save_agent_config(self.config)
+        except Exception:
+            pass
+
+    def _handle_test_voice(self) -> None:
+        vol = int(self.volume_var.get())
+        if self.on_test_voice:
+            self.on_test_voice(vol)
+
+    def set_volume(self, vol: int) -> None:
+        """Actualiza la barra de volumen desde un evento externo (por ejemplo WebSocket)."""
+        self.volume_var.set(vol)
+        self._update_volume_label(vol)
+
     def _on_window_close(self) -> None:
         """Asegura que todos los valores se guarden en disco al cerrar la ventana con la X."""
         try:
@@ -489,6 +621,7 @@ class InputModeSelectorWindow:
             self.config["input_mode"] = self.selected_mode.get().strip() or "gamepad"
             self.config["driving_style"] = self.driving_style_var.get().strip() or "safe"
             self.config["voice_enabled"] = bool(self.voice_var.get())
+            self.config["voice_volume"] = int(self.volume_var.get())
             save_agent_config(self.config)
         except Exception:
             pass
@@ -595,6 +728,7 @@ class InputModeSelectorWindow:
             self.token_var.get().strip() or DEFAULT_AGENT_TOKEN
         )
         self.config["voice_enabled"] = bool(self.voice_var.get())
+        self.config["voice_volume"] = int(self.volume_var.get())
         self.config["gemini_api_key"] = self.gemini_key_var.get().strip()
         save_agent_config(self.config)
         self.on_config_applied(self.config)

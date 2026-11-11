@@ -253,6 +253,8 @@ interface TelemetryContextValue {
   setInputMode: (mode: InputMode, wheelType?: string) => Promise<void>;
   voiceMode: VoiceMode;
   setVoiceMode: (mode: VoiceMode) => Promise<void>;
+  voiceVolume: number;
+  setVoiceVolume: (volume: number) => Promise<void>;
   drivingStyle: DrivingStyle;
   setDrivingStyle: (style: DrivingStyle) => Promise<void>;
   agentConnected: boolean;
@@ -275,6 +277,7 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [inputMode, setInputModeState] = useState<InputMode | null>("gamepad");
   const [voiceMode, setVoiceModeState] = useState<VoiceMode>("companion");
+  const [voiceVolume, setVoiceVolumeState] = useState<number>(65);
   const [drivingStyle, setDrivingStyleState] = useState<DrivingStyle>("safe");
   const [wsConnected, setWsConnected] = useState(false);
   const [cloudHeartbeatActive, setCloudHeartbeatActive] = useState(false);
@@ -504,6 +507,9 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
             ) {
               setVoiceModeState(data.voice_mode as VoiceMode);
             }
+            if (typeof data.voice_volume === "number") {
+              setVoiceVolumeState(data.voice_volume);
+            }
 
             if (data.type === "telemetry_standby" || !data.is_live_acc) {
               setIsAccLive(false);
@@ -658,6 +664,22 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
     [profile?.agent_token]
   );
 
+  const setVoiceVolume = useCallback(
+    async (vol: number) => {
+      const clamped = Math.max(0, Math.min(100, Math.round(vol)));
+      setVoiceVolumeState(clamped);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("acc_apex_voice_volume", String(clamped));
+      }
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(
+          JSON.stringify({ action: "set_voice_volume", voice_volume: clamped })
+        );
+      }
+    },
+    []
+  );
+
   const setDrivingStyle = useCallback(
     async (style: DrivingStyle) => {
       setDrivingStyleState(style);
@@ -684,6 +706,8 @@ export function TelemetryProvider({ children }: { children: React.ReactNode }) {
         setInputMode,
         voiceMode,
         setVoiceMode,
+        voiceVolume,
+        setVoiceVolume,
         drivingStyle,
         setDrivingStyle,
         agentConnected,

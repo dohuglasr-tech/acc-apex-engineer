@@ -223,3 +223,4 @@ class FuelStrategyCalculator:
             current_fuel_l=round(sample.fuel, 1),
             speech_text=speech,
         )
+

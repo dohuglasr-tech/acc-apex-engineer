@@ -93,10 +93,13 @@ def sanitize_spanish_for_speech(text: str) -> str:
     return t.strip()
 
 
-def _play_mp3_winmm(file_path: Path) -> bool:
-    """Reproduce un archivo MP3 usando la API multimedia nativa de Windows sin abrir reproductores externos."""
+def _play_mp3_winmm(file_path: Path, volume: int = 65) -> bool:
+    """Reproduce un archivo MP3 usando la API multimedia nativa de Windows con control de volumen (0 a 100%)."""
     if not file_path.exists() or file_path.stat().st_size < 100:
         return False
+
+    if volume <= 0:
+        return True  # Silenciado intencionalmente
 
     alias = f"apex_rad_{int(time.time() * 1000)}"
     winmm = ctypes.windll.winmm
@@ -109,6 +112,10 @@ def _play_mp3_winmm(file_path: Path) -> bool:
         return False
 
     try:
+        # Ajustar volumen en MCI (0 a 1000)
+        vol_mci = max(0, min(1000, int(volume * 10)))
+        winmm.mciSendStringW(f"setaudio {alias} volume to {vol_mci}", buf, 255, 0)
+
         # Reproducir de forma síncrona
         ret_play = winmm.mciSendStringW(f"play {alias} wait", buf, 255, 0)
         return ret_play == 0
@@ -122,9 +129,15 @@ class VoiceEngineer:
     Frases concisas, humanas y comprensibles al instante durante la carrera.
     """
 
-    def __init__(self, enabled: bool = True, voice_name: str = "es-ES-AlvaroNeural") -> None:
+    def __init__(
+        self,
+        enabled: bool = True,
+        voice_name: str = "es-ES-AlvaroNeural",
+        volume: int = 65,
+    ) -> None:
         self.enabled = enabled
         self.voice_name = voice_name
+        self.volume = max(0, min(100, int(volume)))
         self.speech_rate = "+22%"  # Cadencia enérgica, rápida y profesional de radio F1 (elimina lentitud y monotonía)
         self._queue: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=10)
         self.is_speaking = False
@@ -139,6 +152,10 @@ class VoiceEngineer:
             target=self._worker, daemon=True, name="VoiceEngineerThread"
         )
         self._thread.start()
+
+    def set_volume(self, volume: int) -> None:
+        """Ajusta el volumen de la radio del agente (0% a 100%)."""
+        self.volume = max(0, min(100, int(volume)))
 
     def set_voice(self, voice_name: str) -> None:
         """Permite cambiar la voz de radio (es-ES-AlvaroNeural, es-MX-JorgeNeural, es-ES-ElviraNeural)."""
@@ -277,10 +294,10 @@ class VoiceEngineer:
             cached_mp3 = self._get_cache_path(text)
             played = False
 
-            # 1. Si ya está en caché, reproducir de inmediato (cero latencia)
+            # 1. Si ya está en caché, reproducir de inmediato (cero latencia) con volumen configurado
             if cached_mp3.exists() and cached_mp3.stat().st_size > 256:
                 try:
-                    played = _play_mp3_winmm(cached_mp3)
+                    played = _play_mp3_winmm(cached_mp3, volume=self.volume)
                 except Exception:
                     played = False
 
@@ -289,7 +306,7 @@ class VoiceEngineer:
                 try:
                     ok_neural = asyncio.run(self._synthesize_edge_neural(text, cached_mp3))
                     if ok_neural:
-                        played = _play_mp3_winmm(cached_mp3)
+                        played = _play_mp3_winmm(cached_mp3, volume=self.volume)
                 except Exception:
                     played = False
 
@@ -298,7 +315,7 @@ class VoiceEngineer:
                 try:
                     ok_gtts = self._synthesize_gtts(text, cached_mp3)
                     if ok_gtts:
-                        played = _play_mp3_winmm(cached_mp3)
+                        played = _play_mp3_winmm(cached_mp3, volume=self.volume)
                 except Exception:
                     played = False
 
