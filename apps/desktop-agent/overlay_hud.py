@@ -10,16 +10,62 @@ Incluye:
 from __future__ import annotations
 
 import ctypes
+from ctypes import wintypes
 import math
 import time
 import tkinter as tk
 from typing import Optional
 from shm_reader import TelemetrySample
 
+user32 = ctypes.windll.user32
+
 GWL_EXSTYLE = -20
 WS_EX_LAYERED = 0x00080000
 WS_EX_TRANSPARENT = 0x00000020
 WS_EX_TOPMOST = 0x00000008
+WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_NOACTIVATE = 0x08000000
+
+HWND_TOPMOST = ctypes.c_void_p(-1).value
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_NOACTIVATE = 0x0010
+SWP_SHOWWINDOW = 0x0040
+
+if hasattr(user32, "SetWindowLongPtrW"):
+    user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+    user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+    user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+
+user32.SetWindowPos.argtypes = [
+    wintypes.HWND,
+    wintypes.HWND,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_uint,
+]
+user32.SetWindowPos.restype = wintypes.BOOL
+
+
+class RECT(ctypes.Structure):
+    _fields_ = [
+        ("left", wintypes.LONG),
+        ("top", wintypes.LONG),
+        ("right", wintypes.LONG),
+        ("bottom", wintypes.LONG),
+    ]
+
+
+class MONITORINFO(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("rcMonitor", RECT),
+        ("rcWork", RECT),
+        ("dwFlags", wintypes.DWORD),
+    ]
 
 
 class AgentAvatarCanvas(tk.Canvas):
@@ -273,43 +319,176 @@ class OverlayHUD:
     """
     Overlay HUD In-Game click-through con avatar animado y transcripción
     de radio en tiempo real sobre Assetto Corsa Competizione.
+    Diseñado con prioridad de hardware Z para sobreponerse sin importar
+    la configuración de pantalla (Pantalla Completa, Borderless, 1080p, 1440p, 4K, Ultrawide).
     """
 
-    def __init__(self, root: tk.Tk, input_mode: str = "wheel") -> None:
+    def __init__(
+        self,
+        root: tk.Tk,
+        input_mode: str = "gamepad",
+        hud_enabled: bool = True,
+        hud_position: str = "top_right",
+    ) -> None:
         self.root = root
         self.input_mode = input_mode
         self.voice_mode = "companion"
         self.last_setup_label = "EN ESPERA"
+        self.hud_enabled = hud_enabled
+        self.hud_position = hud_position  # "top_right", "top_left", "bottom_center", "bottom_right"
         self._visible = False
         self._current_radio_text = ""
         self._is_speaking = False
+        self._preview_until: float = 0.0
+        self._last_topmost_reinforce: float = 0.0
+        self._last_reposition_ts: float = 0.0
 
         self.win = tk.Toplevel(self.root)
         self.win.title("ACC Apex Telemetría & Ingeniero IA")
         self.win.overrideredirect(True)
         self.win.attributes("-topmost", True)
-        self.win.attributes("-alpha", 0.92)
+        self.win.attributes("-alpha", 0.94)
         self.win.configure(bg="#08080A")
-
-        screen_w = self.win.winfo_screenwidth()
-        # Dimensiones optimizadas para acomodar el avatar, telemetría y subtítulos
-        self.win.geometry(f"520x192+{screen_w - 540}+24")
+        try:
+            self.win.transient(None)
+        except Exception:
+            pass
 
         self._build_widgets()
-        self.win.after(150, self._apply_click_through)
+        self.reposition_on_game_screen(force=True)
+        self.win.after(100, self._apply_click_through)
         self.win.withdraw()
 
-    def _apply_click_through(self) -> None:
+    def set_hud_enabled(self, enabled: bool) -> None:
+        """Activa o desactiva la visibilidad del HUD in-game."""
+        self.hud_enabled = bool(enabled)
+        if not self.hud_enabled and self._visible:
+            self.win.withdraw()
+            self._visible = False
+
+    def set_hud_position(self, position: str) -> None:
+        """Cambia la ubicación del HUD en la pantalla (top_right, top_left, bottom_center, bottom_right)."""
+        if position in ("top_right", "top_left", "bottom_center", "bottom_right"):
+            self.hud_position = position
+            self.reposition_on_game_screen(force=True)
+
+    def show_preview(self, duration_sec: float = 6.0) -> None:
+        """Muestra una vista previa temporal del HUD para verificar posición y sobreposición en pantalla."""
+        self._preview_until = time.time() + duration_sec
+        self.reposition_on_game_screen(force=True)
+        if not self._visible:
+            self.win.deiconify()
+            self._apply_click_through()
+            self._visible = True
+        self.enforce_topmost()
+
+    def reposition_on_game_screen(self, force: bool = False) -> None:
+        """
+        Detecta en qué monitor corre Assetto Corsa Competizione (o el escritorio principal)
+        y posiciona el HUD en las coordenadas exactas de esa pantalla (1080p, 1440p, 4K, Ultrawide).
+        """
+        now = time.time()
+        if not force and (now - self._last_reposition_ts) < 2.5:
+            return
+        self._last_reposition_ts = now
+
         try:
-            hwnd = ctypes.windll.user32.GetParent(self.win.winfo_id())
-            if not hwnd:
-                hwnd = self.win.winfo_id()
-            style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            ctypes.windll.user32.SetWindowLongW(
-                hwnd,
-                GWL_EXSTYLE,
-                style | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST,
-            )
+            hwnd_target = user32.FindWindowW(None, "Assetto Corsa Competizione")
+            if not hwnd_target:
+                hwnd_target = user32.GetForegroundWindow() or user32.GetDesktopWindow()
+
+            h_mon = user32.MonitorFromWindow(hwnd_target, 2)  # MONITOR_DEFAULTTONEAREST
+            mi = MONITORINFO()
+            mi.cbSize = ctypes.sizeof(MONITORINFO)
+            user32.GetMonitorInfoW(h_mon, ctypes.byref(mi))
+
+            mon_l = mi.rcMonitor.left
+            mon_t = mi.rcMonitor.top
+            mon_w = mi.rcMonitor.right - mi.rcMonitor.left
+            mon_h = mi.rcMonitor.bottom - mi.rcMonitor.top
+
+            hud_w = 520
+            hud_h = 194
+
+            pos = self.hud_position
+            if pos == "top_left":
+                x = mon_l + 24
+                y = mon_t + 24
+            elif pos == "bottom_center":
+                x = mon_l + max(0, (mon_w - hud_w) // 2)
+                y = mon_t + max(0, mon_h - hud_h - 40)
+            elif pos == "bottom_right":
+                x = mon_l + max(0, mon_w - hud_w - 24)
+                y = mon_t + max(0, mon_h - hud_h - 40)
+            else:  # "top_right" por defecto
+                x = mon_l + max(0, mon_w - hud_w - 24)
+                y = mon_t + 24
+
+            self.win.geometry(f"{hud_w}x{hud_h}+{x}+{y}")
+        except Exception:
+            pass
+
+    def enforce_topmost(self) -> None:
+        """
+        Refuerza periódicamente la prioridad Z de hardware para mantener el HUD
+        permanentemente sobre la ventana de ACC incluso en pantalla completa exclusiva o borderless.
+        """
+        now = time.time()
+        if (now - self._last_topmost_reinforce) < 0.35:
+            return
+        self._last_topmost_reinforce = now
+
+        try:
+            self.win.lift()
+            self.win.attributes("-topmost", True)
+            w_id = self.win.winfo_id()
+            p_id = user32.GetParent(w_id) or w_id
+            for h in (p_id, w_id):
+                if h:
+                    user32.SetWindowPos(
+                        h,
+                        HWND_TOPMOST,
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                    )
+        except Exception:
+            pass
+
+    def _apply_click_through(self) -> None:
+        """Aplica estilos extendidos Win32 transparentes y de click-through a nivel de hardware."""
+        try:
+            w_id = self.win.winfo_id()
+            p_id = user32.GetParent(w_id) or w_id
+            for h in (p_id, w_id):
+                if h:
+                    if hasattr(user32, "GetWindowLongPtrW"):
+                        cur = user32.GetWindowLongPtrW(h, GWL_EXSTYLE)
+                    else:
+                        cur = user32.GetWindowLongW(h, GWL_EXSTYLE)
+                    new_style = (
+                        cur
+                        | WS_EX_LAYERED
+                        | WS_EX_TRANSPARENT
+                        | WS_EX_TOPMOST
+                        | WS_EX_TOOLWINDOW
+                        | WS_EX_NOACTIVATE
+                    )
+                    if hasattr(user32, "SetWindowLongPtrW"):
+                        user32.SetWindowLongPtrW(h, GWL_EXSTYLE, new_style)
+                    else:
+                        user32.SetWindowLongW(h, GWL_EXSTYLE, new_style)
+                    user32.SetWindowPos(
+                        h,
+                        HWND_TOPMOST,
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+                    )
         except Exception:
             pass
 
@@ -470,18 +649,50 @@ class OverlayHUD:
         is_speaking: bool = False,
         avg_fuel_per_lap: float = 0.0,
     ) -> None:
-        if sample is None or not sample.is_live_acc:
+        now = time.time()
+
+        # Si el usuario solicitó vista previa desde el panel (botón 'PROBAR HUD')
+        if now < self._preview_until:
+            if not self._visible:
+                self.win.deiconify()
+                self._apply_click_through()
+                self._visible = True
+            self.enforce_topmost()
+            self.reposition_on_game_screen()
+
+            self.avatar_canvas.draw_frame(is_speaking=True, steer_angle=15.0)
+            self.lbl_avatar_tag.configure(text="HABLANDO...", fg="#E10600")
+            self.lbl_radio_status.configure(text="VISTA PREVIA // HUD ACTIVO", fg="#E10600")
+            self.speech_card.configure(highlightbackground="#E10600")
+            self.lbl_radio_sub.configure(
+                text="HUD sobrepuesto sobre pantalla completa. Transmisión de radio y telemetría 333 Hz en vivo."
+            )
+            self.lbl_speed_gear.configure(text="182 KMH   M-4   7210 RPM")
+            self.lbl_tyres.configure(
+                text="PSI  DI 26.8  DD 26.9  TI 26.8  TD 26.8", fg="#10B981"
+            )
+            self.lbl_wear.configure(
+                text="GOMAS: 3% DESGASTE (97% VIDA) · DI 97% DD 97% TI 97% TD 97% | 42.0L (-3.4L/vta)",
+                fg="#10B981",
+            )
+            self.lbl_setup.configure(text="GARAJE: APEX_SETUP_1 (ESTABLE)", fg="#10B981")
+            return
+
+        if not self.hud_enabled or sample is None or not sample.is_live_acc:
             if self._visible:
                 self.win.withdraw()
                 self._visible = False
             return
 
         if not self._visible:
+            self.reposition_on_game_screen(force=True)
             self.win.deiconify()
             self._apply_click_through()
             self._visible = True
-            self.win.lift()
-            self.win.attributes("-topmost", True)
+
+        # Mantener sobrepuesto y en la posición del monitor de ACC
+        self.enforce_topmost()
+        self.reposition_on_game_screen()
 
         self._is_speaking = is_speaking
 

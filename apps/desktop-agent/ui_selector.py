@@ -49,6 +49,10 @@ def load_agent_config() -> Dict[str, Any]:
                 cfg["driving_style"] = "safe"
             if cfg.get("voice_volume") is None:
                 cfg["voice_volume"] = 65
+            if cfg.get("hud_enabled") is None:
+                cfg["hud_enabled"] = True
+            if not cfg.get("hud_position"):
+                cfg["hud_position"] = "top_right"
             if not cfg.get("gemini_api_key"):
                 cfg["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", DEFAULT_GEMINI_KEY)
             return cfg
@@ -63,6 +67,8 @@ def load_agent_config() -> Dict[str, Any]:
         "supabase_anon_key": DEFAULT_SUPABASE_ANON_KEY,
         "voice_enabled": True,
         "voice_volume": 65,
+        "hud_enabled": True,
+        "hud_position": "top_right",
         "gemini_api_key": os.environ.get("GEMINI_API_KEY", DEFAULT_GEMINI_KEY),
     }
 
@@ -98,16 +104,18 @@ class InputModeSelectorWindow:
         on_config_applied: Callable[[Dict[str, Any]], None],
         on_test_gemini: Callable[[], tuple[bool, str]] | None = None,
         on_test_voice: Callable[[int], None] | None = None,
+        on_test_hud: Callable[[], None] | None = None,
     ) -> None:
         self.root = root
         self.config = config
         self.on_config_applied = on_config_applied
         self.on_test_gemini = on_test_gemini
         self.on_test_voice = on_test_voice
+        self.on_test_hud = on_test_hud
         self.linked_username: str = ""
 
         self.root.title("ACC APEX ENGINEER // AGENTE DE TELEMETRÍA")
-        self.root.geometry("660x900")
+        self.root.geometry("660x930")
         self.root.configure(bg="#08080A")
         self.root.resizable(False, False)
 
@@ -119,11 +127,13 @@ class InputModeSelectorWindow:
         )
         self.voice_var = tk.BooleanVar(value=bool(config.get("voice_enabled", True)))
         self.volume_var = tk.IntVar(value=int(config.get("voice_volume", 65)))
+        self.hud_enabled_var = tk.BooleanVar(value=bool(config.get("hud_enabled", True)))
+        self.hud_position_var = tk.StringVar(value=config.get("hud_position") or "top_right")
         self.gemini_key_var = tk.StringVar(
             value=config.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY", "")
         )
 
-        # Auto-guardado instantáneo de Token, Gemini Key y Volumen en cada cambio
+        # Auto-guardado instantáneo de campos en cada cambio
         self.token_var.trace_add("write", self._on_field_auto_save)
         self.gemini_key_var.trace_add("write", self._on_field_auto_save)
         self.volume_var.trace_add("write", self._on_volume_auto_save)
@@ -450,6 +460,78 @@ class InputModeSelectorWindow:
             )
             btn_p.pack(side="left", padx=2)
 
+        # Control del Overlay HUD In-Game (Sobrepuesto en Pantalla Completa)
+        hud_box = tk.Frame(
+            step2,
+            bg="#0E0E14",
+            padx=10,
+            pady=7,
+            highlightbackground="#27272A",
+            highlightthickness=1,
+        )
+        hud_box.pack(fill="x", pady=(5, 2))
+
+        hud_top = tk.Frame(hud_box, bg="#0E0E14")
+        hud_top.pack(fill="x")
+
+        tk.Checkbutton(
+            hud_top,
+            text="OVERLAY HUD EN PANTALLA COMPLETA (AVATAR, TELEMETRÍA Y SUBTÍTULOS)",
+            variable=self.hud_enabled_var,
+            command=self._handle_apply,
+            fg="#FFFFFF",
+            bg="#0E0E14",
+            selectcolor="#121217",
+            activebackground="#0E0E14",
+            font=("Consolas", 8, "bold"),
+        ).pack(side="left")
+
+        self.btn_test_hud = tk.Button(
+            hud_top,
+            text="PROBAR HUD (6S)",
+            command=self._handle_test_hud,
+            bg="#27272A",
+            fg="#FFFFFF",
+            activebackground="#10B981",
+            activeforeground="#FFFFFF",
+            font=("Segoe UI", 7, "bold"),
+            padx=8,
+            pady=1,
+            relief="flat",
+            cursor="hand2",
+        )
+        self.btn_test_hud.pack(side="right")
+
+        hud_pos_row = tk.Frame(hud_box, bg="#0E0E14")
+        hud_pos_row.pack(fill="x", pady=(3, 1))
+
+        tk.Label(
+            hud_pos_row,
+            text="Posición en monitor:",
+            fg="#71717A",
+            bg="#0E0E14",
+            font=("Segoe UI", 8),
+        ).pack(side="left", padx=(0, 6))
+
+        for pos_key, pos_label in [
+            ("top_right", "Arriba Der"),
+            ("top_left", "Arriba Izq"),
+            ("bottom_center", "Abajo Centro (F1)"),
+            ("bottom_right", "Abajo Der"),
+        ]:
+            tk.Radiobutton(
+                hud_pos_row,
+                text=pos_label,
+                value=pos_key,
+                variable=self.hud_position_var,
+                command=self._handle_apply,
+                fg="#D4D4D8",
+                bg="#0E0E14",
+                selectcolor="#121217",
+                activebackground="#0E0E14",
+                font=("Segoe UI", 8),
+            ).pack(side="left", padx=4)
+
         # SECCIÓN 3: GOOGLE GEMINI AI
         step3 = tk.Frame(self.root, bg="#08080A", padx=20, pady=4)
         step3.pack(fill="x")
@@ -608,6 +690,10 @@ class InputModeSelectorWindow:
         if self.on_test_voice:
             self.on_test_voice(vol)
 
+    def _handle_test_hud(self) -> None:
+        if self.on_test_hud:
+            self.on_test_hud()
+
     def set_volume(self, vol: int) -> None:
         """Actualiza la barra de volumen desde un evento externo (por ejemplo WebSocket)."""
         self.volume_var.set(vol)
@@ -622,6 +708,8 @@ class InputModeSelectorWindow:
             self.config["driving_style"] = self.driving_style_var.get().strip() or "safe"
             self.config["voice_enabled"] = bool(self.voice_var.get())
             self.config["voice_volume"] = int(self.volume_var.get())
+            self.config["hud_enabled"] = bool(self.hud_enabled_var.get())
+            self.config["hud_position"] = self.hud_position_var.get().strip() or "top_right"
             save_agent_config(self.config)
         except Exception:
             pass
@@ -729,6 +817,8 @@ class InputModeSelectorWindow:
         )
         self.config["voice_enabled"] = bool(self.voice_var.get())
         self.config["voice_volume"] = int(self.volume_var.get())
+        self.config["hud_enabled"] = bool(self.hud_enabled_var.get())
+        self.config["hud_position"] = self.hud_position_var.get().strip() or "top_right"
         self.config["gemini_api_key"] = self.gemini_key_var.get().strip()
         save_agent_config(self.config)
         self.on_config_applied(self.config)

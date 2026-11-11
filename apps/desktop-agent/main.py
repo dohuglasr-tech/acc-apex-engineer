@@ -264,8 +264,14 @@ class ApexDesktopAgentApp:
             on_config_applied=self._on_config_applied,
             on_test_gemini=self._on_test_gemini,
             on_test_voice=self._on_test_voice,
+            on_test_hud=self._on_test_hud,
         )
-        self.hud = OverlayHUD(self.root, input_mode=initial_mode)
+        self.hud = OverlayHUD(
+            self.root,
+            input_mode=initial_mode,
+            hud_enabled=bool(self.config.get("hud_enabled", True)),
+            hud_position=self.config.get("hud_position") or "top_right",
+        )
         self.hud.set_voice_mode(initial_voice)
 
         self._physics_thread = threading.Thread(
@@ -302,6 +308,9 @@ class ApexDesktopAgentApp:
             f"Radio comprobada. Volumen al {vol} por ciento.", priority=True
         )
 
+    def _on_test_hud(self) -> None:
+        self.hud.show_preview(6.0)
+
     def _on_config_applied(self, updated_cfg: Dict[str, Any]) -> None:
         mode = updated_cfg.get("input_mode") or "gamepad"
         style = updated_cfg.get("driving_style") or "safe"
@@ -310,6 +319,10 @@ class ApexDesktopAgentApp:
         self.injector.set_driving_style(style)
         self.ai_engineer.set_input_mode(mode)
         self.hud.set_input_mode(mode)
+        if updated_cfg.get("hud_enabled") is not None:
+            self.hud.set_hud_enabled(bool(updated_cfg["hud_enabled"]))
+        if updated_cfg.get("hud_position"):
+            self.hud.set_hud_position(updated_cfg["hud_position"])
         if updated_cfg.get("voice_mode"):
             self.ai_engineer.set_voice_mode(updated_cfg["voice_mode"])
             self.hud.set_voice_mode(updated_cfg["voice_mode"])
