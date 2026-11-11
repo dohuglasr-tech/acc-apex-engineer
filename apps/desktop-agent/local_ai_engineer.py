@@ -60,6 +60,9 @@ class LocalAIEngineer:
         self.last_speech_ts: float = 0.0
         self._last_car_state_call_ts: float = 0.0
         self._last_car_alert_key: str = ""
+        self._last_tyre_wear_call_ts: float = 0.0
+        self._last_spoken_tyre_lap: int = -1
+        self._last_wear_bracket: int = -1
 
         # Monitoreo en curva
         self.active_corner: Optional[CornerKnowledge] = None
@@ -310,12 +313,70 @@ class LocalAIEngineer:
 
                 self.active_corner = None
 
-        # 5. MONITOREO DE ESTADO DEL COCHE (Modos "companion" y "car_state")
+        # 5. MONITOREO DE ESTADO DEL COCHE Y DESGASTE DE NEUMÁTICOS (Modos "companion" y "car_state")
         # Silenciado en "telemetry"
         if self.voice_mode in ("companion", "car_state"):
             self._check_car_state_alerts(sample, now)
+            self._check_tyre_wear_reports(sample, now)
 
         return self.get_state()
+
+    def _check_tyre_wear_reports(self, sample: TelemetrySample, now: float) -> None:
+        """
+        Informa de forma proactiva y periódica el estado y porcentaje de desgaste
+        de los neumáticos (delanteros y traseros) en rectas para mantener al piloto 100% informado.
+        """
+        if self.active_corner is not None or sample.speed_kmh < 65.0 or sample.is_in_pit or sample.is_in_pit_lane:
+            return
+
+        # Respetar silencio mínimo tras la última frase de radio para no saturar al piloto
+        if (now - self.last_speech_ts) < 5.0:
+            return
+
+        w = sample.tyre_wear or [3.0, 3.0, 3.0, 3.0]
+        # En ACC 3.0 mm representa el 100% de vida de goma nueva
+        wear_pcts = [round(max(0.0, min(100.0, (1.0 - (val / 3.0)) * 100.0))) for val in w]
+        avg_wear = int(sum(wear_pcts) / 4.0)
+        avg_life = max(0, 100 - avg_wear)
+        current_bracket = avg_wear // 5  # Cambios notables cada 5% de desgaste
+
+        time_elapsed = now - self._last_tyre_wear_call_ts
+        lap_changed = (sample.completed_laps > self._last_spoken_tyre_lap and sample.completed_laps > 0)
+        bracket_changed = (self._last_wear_bracket != -1 and current_bracket > self._last_wear_bracket and avg_wear >= 5)
+
+        # Disparo: cada 42 segundos en recta, al cambiar de vuelta, o cuando el desgaste sube 5%
+        if time_elapsed < 42.0 and not lap_changed and not bracket_changed:
+            return
+
+        front_wear = int((wear_pcts[0] + wear_pcts[1]) / 2.0)
+        rear_wear = int((wear_pcts[2] + wear_pcts[3]) / 2.0)
+
+        tire_labels = ["delantero izquierdo", "delantero derecho", "trasero izquierdo", "trasero derecho"]
+        worst_idx = wear_pcts.index(max(wear_pcts))
+        worst_tire = tire_labels[worst_idx]
+        worst_val = wear_pcts[worst_idx]
+
+        if avg_wear <= 4:
+            msg = f"Reporte de gomas: neumáticos en excelente estado, desgaste al {avg_wear}% y vida al {avg_life}%. Tienes agarre total."
+        elif avg_wear <= 12:
+            msg = f"Estado de neumáticos: gomas al {avg_life}% de vida, desgaste medio en {avg_wear}%. Degradación baja y ritmo estable."
+        elif avg_wear <= 22:
+            if abs(front_wear - rear_wear) >= 4:
+                eje = "delantero" if front_wear > rear_wear else "trasero"
+                val_eje = max(front_wear, rear_wear)
+                msg = f"Reporte de neumáticos: desgaste medio en {avg_wear}%, vida al {avg_life}%. El tren {eje} sufre más con {val_eje}% de desgaste."
+            else:
+                msg = f"Reporte de gomas: desgaste en {avg_wear}%, vida al {avg_life}%. Agarre constante, el {worst_tire} está en {worst_val}%."
+        elif avg_wear <= 35:
+            msg = f"Atención a las gomas: desgaste medio en {avg_wear}%, vida al {avg_life}%. El neumático {worst_tire} acumula {worst_val}% de desgaste. Cuida el apoyo en curvas rápidas."
+        else:
+            msg = f"Alerta de degradación: gomas al {avg_life}% de vida con {avg_wear}% de desgaste. Pérdida sensible de agarre, ve planeando la parada en boxes."
+
+        self._last_tyre_wear_call_ts = now
+        self._last_spoken_tyre_lap = sample.completed_laps
+        self._last_wear_bracket = current_bracket
+        self.last_speech_ts = now
+        self._broadcast_radio(msg, "car_state")
 
     def _check_car_state_alerts(self, sample: TelemetrySample, now: float) -> None:
         """

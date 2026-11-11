@@ -514,7 +514,10 @@ class OverlayHUD:
         if live_alert:
             self.lbl_setup.configure(text=f"AVISO: {live_alert}", fg="#E10600")
         else:
+            w = sample.tyre_wear or [3.0, 3.0, 3.0, 3.0]
+            w_pct = [round(max(0.0, min(100.0, (1.0 - (val / 3.0)) * 100.0))) for val in w]
+            avg_w = int(sum(w_pct) / 4.0)
             self.lbl_setup.configure(
-                text=f"REPARTO {sample.brake_bias:.1f}%  |  COMBUSTIBLE {sample.fuel:.1f} L",
+                text=f"DESGASTE GOMAS {avg_w}%  |  COMB {sample.fuel:.1f}L  |  BIAS {sample.brake_bias:.1f}%",
                 fg="#D4D4D8",
             )

@@ -84,6 +84,8 @@ def sanitize_spanish_for_speech(text: str) -> str:
     t = re.sub(r"\btc\b", "control de tracción", t, flags=re.IGNORECASE)
     t = re.sub(r"\babs\b", "a be ese", t, flags=re.IGNORECASE)
     t = re.sub(r"\bpsi\b", "libras", t, flags=re.IGNORECASE)
+    t = re.sub(r"(\d+)\s*%", r"\1 por ciento", t)
+    t = t.replace("%", " por ciento")
 
     # Redondear distancias a palabras limpias
     t = re.sub(r"(\d+)\s*m\b", r"\1 metros", t)

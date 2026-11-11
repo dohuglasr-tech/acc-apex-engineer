@@ -13,7 +13,7 @@ import tkinter as tk
 import webbrowser
 from pathlib import Path
 from tkinter import messagebox
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional, Tuple
 
 
 CONFIG_PATH = (
