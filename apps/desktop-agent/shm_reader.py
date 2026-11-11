@@ -277,6 +277,17 @@ class TelemetrySample:
     session_time_left: float = 0.0
     session_laps: int = 0
     max_fuel: float = 120.0
+    aid_fuel_rate: float = 1.0
+    aid_tire_rate: float = 1.0
+    aid_mechanical_damage: float = 1.0
+    aid_stability: float = 0.0
+    aid_auto_clutch: bool = False
+    aid_auto_blip: bool = False
+    ideal_line_on: bool = False
+    auto_shifter_on: bool = False
+    penalties_enabled: bool = True
+    has_assists_active: bool = False
+    active_assists_list: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict:
         return {
@@ -332,6 +343,17 @@ class TelemetrySample:
             "session_time_left": round(self.session_time_left, 1),
             "session_laps": self.session_laps,
             "max_fuel": round(self.max_fuel, 1),
+            "aid_fuel_rate": round(self.aid_fuel_rate, 2),
+            "aid_tire_rate": round(self.aid_tire_rate, 2),
+            "aid_mechanical_damage": round(self.aid_mechanical_damage, 2),
+            "aid_stability": round(self.aid_stability, 2),
+            "aid_auto_clutch": self.aid_auto_clutch,
+            "aid_auto_blip": self.aid_auto_blip,
+            "ideal_line_on": self.ideal_line_on,
+            "auto_shifter_on": self.auto_shifter_on,
+            "penalties_enabled": self.penalties_enabled,
+            "has_assists_active": self.has_assists_active,
+            "active_assists_list": self.active_assists_list,
         }
 
 
@@ -420,62 +442,99 @@ class ACCSharedMemoryReader:
             if is_in_pit_now and float(phys.speedKmh) < 1.0 and comp_laps == 0:
                 self._tyre_wear_mm = [3.0, 3.0, 3.0, 3.0]
 
-            # Verificación si el juego provee desgaste directo nativo
-            raw_wear = [float(phys.tyreWear[i]) for i in range(4)]
-            has_valid_raw = any(0.05 < x <= 3.05 for x in raw_wear)
+            # Detección exhaustiva de asistencias y ayudas de simulación en ACC
+            aid_fuel = float(stc.aidFuelRate) if stc else 1.0
+            aid_tire = float(stc.aidTireRate) if stc else 1.0
+            aid_damage = float(stc.aidMechanicalDamage) if stc else 1.0
+            aid_stab = float(stc.aidStability) if stc else 0.0
+            aid_clutch = bool(stc.aidAutoClutch) if stc else False
+            aid_blip = bool(stc.aidAutoBlip) if stc else False
+            penalties_on = bool(stc.penaltiesEnabled) if stc else True
+            ideal_line = bool(gfx.idealLineOn) if gfx else False
+            auto_shift = bool(phys.autoShifterOn)
 
-            if has_valid_raw:
-                wear_mm = [round(x, 2) for x in raw_wear]
-                self._tyre_wear_mm = list(wear_mm)
+            assists_list: List[str] = []
+            if aid_fuel <= 0.05:
+                assists_list.append("consumo de combustible en no")
+            if aid_tire <= 0.05:
+                assists_list.append("desgaste de neumáticos en no")
+            if aid_damage <= 0.05:
+                assists_list.append("daño de auto en no")
+            if aid_stab > 0.05:
+                assists_list.append(f"control de estabilidad al {int(round(aid_stab * 100))}%")
+            if ideal_line:
+                assists_list.append("guía de trazada ideal")
+            if auto_shift:
+                assists_list.append("cambio automático")
+            if aid_clutch:
+                assists_list.append("embrague automático")
+            if aid_blip:
+                assists_list.append("punta-tacón automático")
+
+            has_assists = len(assists_list) > 0
+
+            # Si el usuario tiene el desgaste de neumáticos en NO (aid_tire <= 0.05),
+            # congelamos el desgaste al 100% de vida (3.0 mm) respetando la ayuda de ACC
+            if aid_tire <= 0.05:
+                self._tyre_wear_mm = [3.0, 3.0, 3.0, 3.0]
+                wear_mm = [3.0, 3.0, 3.0, 3.0]
             else:
-                # Kunos ACC deja tyreWear[4] a 0.0 en SPageFilePhysics.
-                # Integramos el modelo físico dinámico a 333 Hz basado en:
-                # Rodadura (distancia) + Wheel Slip + Bloqueo de frenos + Arrastre de dirección + Estrés térmico
-                dt = (now - self._last_wear_calc_ts) if self._last_wear_calc_ts > 0 else 0.003
-                self._last_wear_calc_ts = now
+                # Verificación si el juego provee desgaste directo nativo
+                raw_wear = [float(phys.tyreWear[i]) for i in range(4)]
+                has_valid_raw = any(0.05 < x <= 3.05 for x in raw_wear)
 
-                if 0.0005 <= dt <= 0.25 and float(phys.speedKmh) > 5.0:
-                    spd_kmh = float(phys.speedKmh)
-                    dist_m = (spd_kmh / 3.6) * dt
-                    steer = abs(float(phys.steerAngle))
-                    brake = max(0.0, min(1.0, float(phys.brake)))
+                if has_valid_raw:
+                    wear_mm = [round(x, 2) for x in raw_wear]
+                    self._tyre_wear_mm = list(wear_mm)
+                else:
+                    # Kunos ACC deja tyreWear[4] a 0.0 en SPageFilePhysics.
+                    # Integramos el modelo físico dinámico a 333 Hz basado en:
+                    # Rodadura (distancia) + Wheel Slip + Bloqueo de frenos + Arrastre de dirección + Estrés térmico
+                    dt = (now - self._last_wear_calc_ts) if self._last_wear_calc_ts > 0 else 0.003
+                    self._last_wear_calc_ts = now
 
-                    for i in range(4):
-                        # 1. Desgaste base por rodadura en asfalto:
-                        # Ritmo GT3: ~0.09 mm por vuelta de 5.5 km (~3% por vuelta) = 1.63e-5 mm/m
-                        base_wear = dist_m * 0.0000165
+                    if 0.0005 <= dt <= 0.25 and float(phys.speedKmh) > 5.0:
+                        spd_kmh = float(phys.speedKmh)
+                        dist_m = (spd_kmh / 3.6) * dt
+                        steer = abs(float(phys.steerAngle))
+                        brake = max(0.0, min(1.0, float(phys.brake)))
 
-                        # 2. Desgaste por deslizamiento de rueda (Wheel Slip longitudinal y lateral):
-                        slip = abs(float(phys.wheelSlip[i]))
-                        slip_wear = 0.0
-                        if slip > 0.025:
-                            excess_slip = min(1.0, slip - 0.025)
-                            slip_wear = excess_slip * (spd_kmh / 75.0) * dt * 0.0018
+                        for i in range(4):
+                            # 1. Desgaste base por rodadura en asfalto:
+                            # Ritmo GT3: ~0.09 mm por vuelta de 5.5 km (~3% por vuelta) = 1.63e-5 mm/m
+                            base_wear = dist_m * 0.0000165
 
-                        # 3. Desgaste por bloqueo de frenos (Flat-spotting / arrastre):
-                        lock_wear = 0.0
-                        if brake > 0.45 and slip > 0.10:
-                            lock_wear = brake * slip * dt * 0.0035
+                            # 2. Desgaste por deslizamiento de rueda (Wheel Slip longitudinal y lateral):
+                            slip = abs(float(phys.wheelSlip[i]))
+                            slip_wear = 0.0
+                            if slip > 0.025:
+                                excess_slip = min(1.0, slip - 0.025)
+                                slip_wear = excess_slip * (spd_kmh / 75.0) * dt * 0.0018
 
-                        # 4. Desgaste por arrastre excesivo de dirección en tren delantero (i < 2):
-                        scrub_wear = 0.0
-                        if i < 2 and steer > 30.0 and spd_kmh > 65.0:
-                            scrub_wear = (steer / 100.0) * (spd_kmh / 100.0) * dt * 0.0006
+                            # 3. Desgaste por bloqueo de frenos (Flat-spotting / arrastre):
+                            lock_wear = 0.0
+                            if brake > 0.45 and slip > 0.10:
+                                lock_wear = brake * slip * dt * 0.0035
 
-                        # 5. Factor por estrés térmico (Ventana óptima Pirelli DHE GT3: 75°C - 88°C):
-                        c_temp = core_temps[i]
-                        temp_mult = 1.0
-                        if c_temp > 92.0:
-                            # Sobrecalentamiento: ampollas y desprendimiento acelerado de caucho
-                            temp_mult = 1.0 + min(2.5, (c_temp - 92.0) * 0.07)
-                        elif c_temp < 65.0 and spd_kmh > 75.0:
-                            # Goma fría resbalando sobre asfalto genera graining acelerado
-                            temp_mult = 1.0 + min(1.5, (65.0 - c_temp) * 0.03)
+                            # 4. Desgaste por arrastre excesivo de dirección en tren delantero (i < 2):
+                            scrub_wear = 0.0
+                            if i < 2 and steer > 30.0 and spd_kmh > 65.0:
+                                scrub_wear = (steer / 100.0) * (spd_kmh / 100.0) * dt * 0.0006
 
-                        total_step_wear = (base_wear + slip_wear + lock_wear + scrub_wear) * temp_mult
-                        self._tyre_wear_mm[i] = max(0.15, self._tyre_wear_mm[i] - total_step_wear)
+                            # 5. Factor por estrés térmico (Ventana óptima Pirelli DHE GT3: 75°C - 88°C):
+                            c_temp = core_temps[i]
+                            temp_mult = 1.0
+                            if c_temp > 92.0:
+                                # Sobrecalentamiento: ampollas y desprendimiento acelerado de caucho
+                                temp_mult = 1.0 + min(2.5, (c_temp - 92.0) * 0.07)
+                            elif c_temp < 65.0 and spd_kmh > 75.0:
+                                # Goma fría resbalando sobre asfalto genera graining acelerado
+                                temp_mult = 1.0 + min(1.5, (65.0 - c_temp) * 0.03)
 
-                wear_mm = [round(x, 2) for x in self._tyre_wear_mm]
+                            total_step_wear = (base_wear + slip_wear + lock_wear + scrub_wear) * temp_mult
+                            self._tyre_wear_mm[i] = max(0.15, self._tyre_wear_mm[i] - total_step_wear)
+
+                    wear_mm = [round(x, 2) for x in self._tyre_wear_mm]
 
             pad_mm = [
                 float(phys.padLife[i]) if float(phys.padLife[i]) > 0.1 else 29.0
@@ -555,6 +614,17 @@ class ACCSharedMemoryReader:
                 session_time_left=float(gfx.sessionTimeLeft) if gfx else 0.0,
                 session_laps=int(gfx.numberOfLaps) if gfx else 0,
                 max_fuel=float(stc.maxFuel) if (stc and stc.maxFuel > 10.0) else 120.0,
+                aid_fuel_rate=aid_fuel,
+                aid_tire_rate=aid_tire,
+                aid_mechanical_damage=aid_damage,
+                aid_stability=aid_stab,
+                aid_auto_clutch=aid_clutch,
+                aid_auto_blip=aid_blip,
+                ideal_line_on=ideal_line,
+                auto_shifter_on=auto_shift,
+                penalties_enabled=penalties_on,
+                has_assists_active=has_assists,
+                active_assists_list=assists_list,
             )
         except Exception:
             return None

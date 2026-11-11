@@ -46,6 +46,10 @@ REGLAS DE COMUNICACIÓN POR RADIO:
    a) Que has creado y guardado el setup en su garaje (por ejemplo: "He creado el setup APEX SETUP 1 en tu garaje").
    b) Que fue adaptado a su modo de manejo (mando o volante), a las condiciones de pista (temperatura de asfalto/clima) y a su telemetría.
    c) Que lo cargue manualmente en el menú de garaje cuando entre a boxes.
+7. REGLA DE AYUDAS Y ASISTENCIAS DE JUEGO (MODO TRAZADA Y CONTRARRELOJ):
+   Si el piloto tiene ayudas de simulación activadas (sin consumo de combustible, sin desgaste de neumáticos o control de estabilidad):
+   - JAMÁS le pidas repostar, ni hables de paradas por combustible, ni menciones degradación de ruedas.
+   - Concéntrate exclusivamente en su trazada (racing line), puntos de frenada, velocidad de vértice y cómo arañar décimas al cronómetro.
 """
 
 
@@ -217,6 +221,19 @@ class GeminiRaceEngineer:
             input_mode_es = ctx.get("input_mode_es", "mando")
             track_cond = ctx.get("track_cond", "condiciones de pista")
             setup_reason = ctx.get("setup_reason", "calibración térmica y estabilidad")
+            assists_active = ctx.get("assists_active", False)
+            assists_desc = ctx.get("assists_desc", "")
+
+            if assists_active:
+                return (
+                    f"El piloto completó vuelta en {track} con tiempo {lap_time} ({delta_str}). "
+                    f"MODO ASISTENCIAS DE JUEGO DETECTADAS: El piloto tiene activadas ayudas en ACC ({assists_desc}). "
+                    f"REGLA OBLIGATORIA: NO menciones consumo de combustible, ni paradas de repostaje, ni desgaste de neumáticos (están desactivados en el juego). "
+                    f"Comunícale por radio como ingeniero de pista de F1 (en 2 frases directas, técnicas y enérgicas): "
+                    f"1) Su tiempo y si mejoró o no ({delta_str}), con un consejo técnico clave de trazada, referencia de frenada o piano para arañar décimas en el siguiente giro. "
+                    f"2) Que le creaste '{slot_name}' en su garaje adaptado a su {input_mode_es} para darle máxima estabilidad en curva y velocidad punta, para cuando entre al garaje."
+                )
+
             fuel_used_l = ctx.get("fuel_used_l", 0.0)
             avg_fuel_l = ctx.get("avg_fuel_l", 0.0)
             fuel_text = f"Consumo en vuelta: {fuel_used_l:.1f} litros (media {avg_fuel_l:.1f} L/vta). " if fuel_used_l > 0 else ""
@@ -229,6 +246,12 @@ class GeminiRaceEngineer:
                 f"2) Que le creaste '{slot_name}' en su garaje adaptado a su {input_mode_es} y a la pista, y que lo cargue cuando entre a boxes."
             )
         elif event_type == "pit_fuel_strategy":
+            assists_active = ctx.get("assists_active", False)
+            if assists_active:
+                return (
+                    f"El coche está en boxes en {track}. Tiene ayudas de simulación activadas (sin consumo de combustible ni desgaste de gomas). "
+                    f"Dile por radio como Álvaro en 1 frase concisa que el combustible y gomas son ilimitados y que salga a pista a buscar la vuelta rápida perfecta apurando la trazada."
+                )
             session_name = ctx.get("session_name", "Carrera")
             rec_fuel = ctx.get("recommended_fuel_l", 25)
             avg_fuel = ctx.get("avg_fuel_per_lap", 3.2)

@@ -473,6 +473,11 @@ class ApexDesktopAgentApp:
                 reasons = [c.get("reason", "") for c in changes if c.get("reason")][:2]
                 reason_summary = " y ".join(reasons) if reasons else "presiones térmicas y equilibrio dinámico"
 
+                has_assists = bool(getattr(self.latest_sample, "has_assists_active", False)) if self.latest_sample else False
+                assists_desc = ", ".join(getattr(self.latest_sample, "active_assists_list", [])) if self.latest_sample else ""
+                fuel_used_val = lap.fuel_used if getattr(self.latest_sample, "aid_fuel_rate", 1.0) > 0.05 else 0.0
+                avg_fuel_val = avg_fuel_lap if getattr(self.latest_sample, "aid_fuel_rate", 1.0) > 0.05 else 0.0
+
                 ctx = {
                     "track_name": lap.track_name,
                     "car_model": lap.car_model,
@@ -486,9 +491,15 @@ class ApexDesktopAgentApp:
                     "track_cond": track_cond,
                     "setup_reason": reason_summary,
                     "primary_error": primary_err or "trazada constante",
-                    "tyre_wear_pct": f"{avg_wear}% (DI {wear_pcts[0]}%, DD {wear_pcts[1]}%, TI {wear_pcts[2]}%, TD {wear_pcts[3]}%)",
-                    "fuel_used_l": lap.fuel_used,
-                    "avg_fuel_l": avg_fuel_lap,
+                    "tyre_wear_pct": (
+                        f"{avg_wear}% (DI {wear_pcts[0]}%, DD {wear_pcts[1]}%, TI {wear_pcts[2]}%, TD {wear_pcts[3]}%)"
+                        if getattr(self.latest_sample, "aid_tire_rate", 1.0) > 0.05
+                        else "GOMAS FIJAS AL 100% (DESGASTE OFF)"
+                    ),
+                    "fuel_used_l": fuel_used_val,
+                    "avg_fuel_l": avg_fuel_val,
+                    "assists_active": has_assists,
+                    "assists_desc": assists_desc,
                 }
 
                 def _on_gemini_lap(g_text: str, g_cat: str) -> None:
@@ -496,6 +507,9 @@ class ApexDesktopAgentApp:
 
                 self.gemini.generate_radio_advice_async("lap_summary", ctx, _on_gemini_lap)
             else:
+                fuel_for_announcement = (
+                    lap.fuel_used if getattr(self.latest_sample, "aid_fuel_rate", 1.0) > 0.05 else 0.0
+                )
                 self.voice.announce_lap_and_setup(
                     lap_number=lap.lap_number,
                     lap_time_ms=lap.lap_time_ms,
@@ -505,7 +519,7 @@ class ApexDesktopAgentApp:
                     primary_error=primary_err,
                     input_mode=lap.input_mode,
                     road_temp=lap.road_temp,
-                    fuel_used=lap.fuel_used,
+                    fuel_used=fuel_for_announcement,
                 )
         self.cloud_sync.sync_lap_and_setup_async(
             lap=lap,
@@ -519,6 +533,13 @@ class ApexDesktopAgentApp:
         self, strat: FuelStrategyResult, sample: TelemetrySample
     ) -> None:
         """Emite por radio la estrategia de combustible antes de salir de boxes."""
+        if getattr(sample, "aid_fuel_rate", 1.0) <= 0.05:
+            self.hud.set_setup_status("BOXES: AYUDAS ON · COMBUSTIBLE ILIMITADO")
+            msg = "Coche en garaje. Tienes el consumo de combustible y desgaste desactivados. Carga el combustible libremente y sal a pista a buscar tu vuelta rápida perfecta."
+            self.voice.speak(msg)
+            self.ai_engineer._broadcast_radio(msg, "strategy")
+            return
+
         self.hud.set_setup_status(
             f"BOXES: {strat.session_name.upper()} -> Cargar {strat.recommended_fuel_l}L"
         )

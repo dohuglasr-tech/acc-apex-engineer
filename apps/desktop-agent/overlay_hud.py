@@ -799,6 +799,12 @@ class OverlayHUD:
             fg=psi_color,
         )
 
+        if getattr(sample, "has_assists_active", False):
+            mode_es = {"keyboard": "TECLADO", "gamepad": "MANDO", "wheel": "VOLANTE"}.get(
+                self.input_mode, "MANDO"
+            )
+            self.lbl_mode.configure(text=f"{mode_es} · AYUDAS ON", fg="#38BDF8")
+
         w = sample.tyre_wear or [3.0, 3.0, 3.0, 3.0]
         w_pct = [round(max(0.0, min(100.0, (1.0 - (val / 3.0)) * 100.0))) for val in w]
         avg_w = int(sum(w_pct) / 4.0)
@@ -809,12 +815,27 @@ class OverlayHUD:
             if avg_fuel_per_lap > 0
             else f"{sample.fuel:.1f}L"
         )
-        self.lbl_wear.configure(
-            text=f"GOMAS: {avg_w}% DESGASTE ({avg_life}% VIDA) · DI {w_pct[0]}% DD {w_pct[1]}% TI {w_pct[2]}% TD {w_pct[3]}% | {fuel_str}",
-            fg=wear_color,
-        )
+
+        has_assists = getattr(sample, "has_assists_active", False)
+        aid_tire = getattr(sample, "aid_tire_rate", 1.0)
+        aid_fuel = getattr(sample, "aid_fuel_rate", 1.0)
+
+        if has_assists and (aid_tire <= 0.05 or aid_fuel <= 0.05):
+            tire_info = "GOMAS 100% (DESGASTE OFF)" if aid_tire <= 0.05 else f"GOMAS {avg_life}%"
+            fuel_info = f"GAS {sample.fuel:.1f}L (OFF)" if aid_fuel <= 0.05 else f"{sample.fuel:.1f}L"
+            self.lbl_wear.configure(
+                text=f"MODO TRAZADA // {tire_info} | {fuel_info}",
+                fg="#38BDF8",
+            )
+        else:
+            self.lbl_wear.configure(
+                text=f"GOMAS: {avg_w}% DESGASTE ({avg_life}% VIDA) · DI {w_pct[0]}% DD {w_pct[1]}% TI {w_pct[2]}% TD {w_pct[3]}% | {fuel_str}",
+                fg=wear_color,
+            )
 
         if live_alert:
             self.lbl_setup.configure(text=f"AVISO: {live_alert}", fg="#E10600")
+        elif has_assists:
+            self.lbl_setup.configure(text=f"GARAJE: {self.last_setup_label} [TRAZADA]", fg="#38BDF8")
         else:
             self.lbl_setup.configure(text=f"GARAJE: {self.last_setup_label}", fg="#A1A1AA")

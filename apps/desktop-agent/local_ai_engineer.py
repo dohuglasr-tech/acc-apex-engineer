@@ -72,6 +72,11 @@ class LocalAIEngineer:
         self.in_corner_tc_cuts: int = 0
         self.in_corner_had_trail: bool = False
 
+        # Detección y recordatorios no invasivos de ayudas activadas
+        self._assists_notified_count: int = 0
+        self._last_assists_reminder_ts: float = 0.0
+        self._last_assists_reminder_lap: int = -1
+
         # Datos analíticos
         self.last_corner_result: Optional[Dict[str, Any]] = None
         self.upcoming_corner_data: Optional[Dict[str, Any]] = None
@@ -333,19 +338,88 @@ class LocalAIEngineer:
 
                 self.active_corner = None
 
-        # 5. MONITOREO DE ESTADO DEL COCHE Y DESGASTE DE NEUMÁTICOS (Modos "companion" y "car_state")
+        # 5. MONITOREO DE ESTADO DEL COCHE, AYUDAS Y DESGASTE DE NEUMÁTICOS
         # Silenciado en "telemetry"
         if self.voice_mode in ("companion", "car_state"):
+            self._check_assists_reminder(sample, now)
             self._check_car_state_alerts(sample, now)
             self._check_tyre_wear_reports(sample, now)
 
         return self.get_state()
+
+    def _check_assists_reminder(self, sample: TelemetrySample, now: float) -> None:
+        """
+        Detecta si el usuario tiene ayudas activadas (como sin consumo de combustible, sin desgaste
+        de neumáticos, sin daños, control de estabilidad, línea ideal, etc.). Si las detecta, se lo
+        hace saber en repetidas ocasiones (sin ser invasivo) y orienta la asistencia de radio
+        exclusivamente a optimizar trazadas, puntos de frenada y recortar tiempo de vuelta.
+        """
+        if not getattr(sample, "has_assists_active", False):
+            return
+
+        # Solo hablar en rectas y condiciones de conducción estables para no desconcentrar
+        if (
+            self.active_corner is not None
+            or sample.speed_kmh < 65.0
+            or sample.is_in_pit
+            or sample.is_in_pit_lane
+            or sample.brake > 0.05
+        ):
+            return
+
+        # Respetar silencio mínimo estricto de radio para no ser invasivo
+        if (now - self.last_speech_ts) < 7.0:
+            return
+
+        # 1. Primer aviso informativo al arrancar la tanda en pista
+        if self._assists_notified_count == 0:
+            if (now - self._last_assists_reminder_ts) < 8.0:
+                return
+            assists_list = getattr(sample, "active_assists_list", [])
+            assists_summary = ", ".join(assists_list[:3]) if assists_list else "ayudas activadas"
+            msg = (
+                f"He detectado ayudas de simulación activas: {assists_summary}. "
+                f"Activamos el modo Trazada y Contrarreloj: omitiremos la gestión de combustible y neumáticos "
+                f"para enfocarnos al cien por cien en tus puntos de frenada, vértices y bajar tu tiempo por vuelta."
+            )
+            self._assists_notified_count = 1
+            self._last_assists_reminder_ts = now
+            self._last_assists_reminder_lap = sample.completed_laps
+            self.last_speech_ts = now
+            self._broadcast_radio(msg, "alert")
+            return
+
+        # 2. Recordatorios periódicos en repetidas ocasiones (No invasivos):
+        # Disparo: cada 3 vueltas completadas O si transcurren más de 240 segundos (4 minutos) de rodaje
+        lap_interval = sample.completed_laps >= (self._last_assists_reminder_lap + 3) and sample.completed_laps > 0
+        time_interval = (now - self._last_assists_reminder_ts) >= 240.0
+
+        if not lap_interval and not time_interval:
+            return
+
+        idx = (self._assists_notified_count - 1) % 4
+        reminders = [
+            "Recordatorio de telemetría: sigues rodando con ayudas activadas. Mantenemos el foco exclusivamente en apurar las frenadas, morder los vértices y rebajar el crono.",
+            "Seguimos en Modo Trazada Pura con ayudas de juego. Trata de soltar el freno más progresivo hacia el punto de giro para maximizar la velocidad en el vértice.",
+            "Ayudas del simulador detectadas activas. Concéntrate en la línea de carrera y abrir la dirección pronto al salir de curva para traccionar con fuerza.",
+            "Modo Contrarreloj activo. Sin desgaste de neumáticos ni consumo, toda la ganancia está en la trazada y en recortar metros en cada frenada.",
+        ]
+        msg = reminders[idx]
+        self._assists_notified_count += 1
+        self._last_assists_reminder_ts = now
+        self._last_assists_reminder_lap = sample.completed_laps
+        self.last_speech_ts = now
+        self._broadcast_radio(msg, "coaching")
 
     def _check_tyre_wear_reports(self, sample: TelemetrySample, now: float) -> None:
         """
         Informa de forma proactiva y periódica el estado y porcentaje de desgaste
         de los neumáticos (delanteros y traseros) en rectas para mantener al piloto 100% informado.
         """
+        # Si el usuario tiene desactivado el desgaste de neumáticos en el juego, silenciamos el reporte
+        if getattr(sample, "aid_tire_rate", 1.0) <= 0.05:
+            return
+
         if self.active_corner is not None or sample.speed_kmh < 65.0 or sample.is_in_pit or sample.is_in_pit_lane:
             return
 
@@ -409,8 +483,12 @@ class LocalAIEngineer:
         if (now - self._last_car_state_call_ts) < 35.0 or (now - self.last_speech_ts) < 6.0:
             return
 
-        # 1. Combustible crítico
-        if 0.0 < sample.fuel <= 9.0 and self._last_car_alert_key != f"fuel_{int(sample.fuel)}":
+        # 1. Combustible crítico (solo si el consumo de combustible está activado en el simulador)
+        if (
+            getattr(sample, "aid_fuel_rate", 1.0) > 0.05
+            and 0.0 < sample.fuel <= 9.0
+            and self._last_car_alert_key != f"fuel_{int(sample.fuel)}"
+        ):
             self._last_car_alert_key = f"fuel_{int(sample.fuel)}"
             self._last_car_state_call_ts = now
             self.last_speech_ts = now
