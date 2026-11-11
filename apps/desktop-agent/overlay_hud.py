@@ -519,8 +519,9 @@ class OverlayHUD:
             w = sample.tyre_wear or [3.0, 3.0, 3.0, 3.0]
             w_pct = [round(max(0.0, min(100.0, (1.0 - (val / 3.0)) * 100.0))) for val in w]
             avg_w = int(sum(w_pct) / 4.0)
+            avg_life = max(0, 100 - avg_w)
             wear_color = "#10B981" if avg_w < 15 else ("#F59E0B" if avg_w < 35 else "#EF4444")
             self.lbl_setup.configure(
-                text=f"DESGASTE GOMAS {avg_w}% (DI {w_pct[0]}% · DD {w_pct[1]}% · TI {w_pct[2]}% · TD {w_pct[3]}%) | {sample.fuel:.1f}L",
+                text=f"DESGASTE {avg_w}% ({avg_life}% VIDA) · DI {w_pct[0]}% DD {w_pct[1]}% TI {w_pct[2]}% TD {w_pct[3]}% | {sample.fuel:.1f}L",
                 fg=wear_color,
             )

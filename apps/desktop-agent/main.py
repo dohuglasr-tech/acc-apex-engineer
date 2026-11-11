@@ -400,12 +400,16 @@ class ApexDesktopAgentApp:
                 secs = int(lap_sec % 60)
                 tenths = int(round((lap_sec - int(lap_sec)) * 10))
                 time_str = f"{mins}:{secs:02d}.{tenths}"
+                w = self.latest_sample.tyre_wear if self.latest_sample else [3.0, 3.0, 3.0, 3.0]
+                wear_pcts = [round(max(0.0, min(100.0, (1.0 - (val / 3.0)) * 100.0))) for val in w]
+                avg_wear = int(sum(wear_pcts) / 4.0)
                 ctx = {
                     "track_name": lap.track_name,
                     "car_model": lap.car_model,
                     "lap_time_str": time_str,
                     "setup_version": version_num,
                     "primary_error": primary_err or "trazada constante",
+                    "tyre_wear_pct": f"{avg_wear}% (DI {wear_pcts[0]}%, DD {wear_pcts[1]}%, TI {wear_pcts[2]}%, TD {wear_pcts[3]}%)",
                 }
 
                 def _on_gemini_lap(g_text: str, g_cat: str) -> None:

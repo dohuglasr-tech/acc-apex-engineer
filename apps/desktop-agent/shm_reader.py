@@ -335,6 +335,11 @@ class ACCSharedMemoryReader:
     def __init__(self) -> None:
         self._last_packet_id: int = -1
         self._last_change_ts: float = 0.0
+        # Modelo físico real de desgaste de neumáticos a 333 Hz (en mm de goma, 3.00 = nueva)
+        self._tyre_wear_mm: List[float] = [3.0, 3.0, 3.0, 3.0]
+        self._last_wear_calc_ts: float = 0.0
+        self._last_car: str = ""
+        self._last_track: str = ""
 
     def close(self) -> None:
         pass
@@ -393,15 +398,76 @@ class ACCSharedMemoryReader:
                     to = max(0.0, c - 2.5)
                 imo_temps.append([ti, tm, to])
 
-            wear_mm: List[float] = []
-            for i in range(4):
-                w = float(phys.tyreWear[i])
-                if w <= 0.0:
-                    wear_mm.append(3.0)
-                elif w <= 1.05:
-                    wear_mm.append(round(w * 3.0, 2))
-                else:
-                    wear_mm.append(round(w, 2))
+            # Detección de reinicio de sesión, cambio de coche o circuito
+            if car_model != self._last_car or track_name != self._last_track:
+                self._last_car = car_model
+                self._last_track = track_name
+                self._tyre_wear_mm = [3.0, 3.0, 3.0, 3.0]
+                self._last_wear_calc_ts = now
+
+            is_in_pit_now = bool(gfx.isInPit) if gfx else False
+            comp_laps = int(gfx.completedLaps) if gfx else 0
+
+            # Si el coche está en el garaje/box a 0 km/h al arrancar o cambiar setup -> gomas nuevas
+            if is_in_pit_now and float(phys.speedKmh) < 1.0 and comp_laps == 0:
+                self._tyre_wear_mm = [3.0, 3.0, 3.0, 3.0]
+
+            # Verificación si el juego provee desgaste directo nativo
+            raw_wear = [float(phys.tyreWear[i]) for i in range(4)]
+            has_valid_raw = any(0.05 < x <= 3.05 for x in raw_wear)
+
+            if has_valid_raw:
+                wear_mm = [round(x, 2) for x in raw_wear]
+                self._tyre_wear_mm = list(wear_mm)
+            else:
+                # Kunos ACC deja tyreWear[4] a 0.0 en SPageFilePhysics.
+                # Integramos el modelo físico dinámico a 333 Hz basado en:
+                # Rodadura (distancia) + Wheel Slip + Bloqueo de frenos + Arrastre de dirección + Estrés térmico
+                dt = (now - self._last_wear_calc_ts) if self._last_wear_calc_ts > 0 else 0.003
+                self._last_wear_calc_ts = now
+
+                if 0.0005 <= dt <= 0.25 and float(phys.speedKmh) > 5.0:
+                    spd_kmh = float(phys.speedKmh)
+                    dist_m = (spd_kmh / 3.6) * dt
+                    steer = abs(float(phys.steerAngle))
+                    brake = max(0.0, min(1.0, float(phys.brake)))
+
+                    for i in range(4):
+                        # 1. Desgaste base por rodadura en asfalto:
+                        # Ritmo GT3: ~0.09 mm por vuelta de 5.5 km (~3% por vuelta) = 1.63e-5 mm/m
+                        base_wear = dist_m * 0.0000165
+
+                        # 2. Desgaste por deslizamiento de rueda (Wheel Slip longitudinal y lateral):
+                        slip = abs(float(phys.wheelSlip[i]))
+                        slip_wear = 0.0
+                        if slip > 0.025:
+                            excess_slip = min(1.0, slip - 0.025)
+                            slip_wear = excess_slip * (spd_kmh / 75.0) * dt * 0.0018
+
+                        # 3. Desgaste por bloqueo de frenos (Flat-spotting / arrastre):
+                        lock_wear = 0.0
+                        if brake > 0.45 and slip > 0.10:
+                            lock_wear = brake * slip * dt * 0.0035
+
+                        # 4. Desgaste por arrastre excesivo de dirección en tren delantero (i < 2):
+                        scrub_wear = 0.0
+                        if i < 2 and steer > 30.0 and spd_kmh > 65.0:
+                            scrub_wear = (steer / 100.0) * (spd_kmh / 100.0) * dt * 0.0006
+
+                        # 5. Factor por estrés térmico (Ventana óptima Pirelli DHE GT3: 75°C - 88°C):
+                        c_temp = core_temps[i]
+                        temp_mult = 1.0
+                        if c_temp > 92.0:
+                            # Sobrecalentamiento: ampollas y desprendimiento acelerado de caucho
+                            temp_mult = 1.0 + min(2.5, (c_temp - 92.0) * 0.07)
+                        elif c_temp < 65.0 and spd_kmh > 75.0:
+                            # Goma fría resbalando sobre asfalto genera graining acelerado
+                            temp_mult = 1.0 + min(1.5, (65.0 - c_temp) * 0.03)
+
+                        total_step_wear = (base_wear + slip_wear + lock_wear + scrub_wear) * temp_mult
+                        self._tyre_wear_mm[i] = max(0.15, self._tyre_wear_mm[i] - total_step_wear)
+
+                wear_mm = [round(x, 2) for x in self._tyre_wear_mm]
 
             pad_mm = [
                 float(phys.padLife[i]) if float(phys.padLife[i]) > 0.1 else 29.0

@@ -83,6 +83,13 @@ export function AccSetupEngineerBay() {
     ];
   }, [frame]);
 
+  const liveOrCapturedWear: [number, number, number, number] = useMemo(() => {
+    if (frame?.tyre_wear && frame.tyre_wear[0] > 0) {
+      return frame.tyre_wear;
+    }
+    return [2.86, 2.85, 2.88, 2.87];
+  }, [frame]);
+
   // Cálculo de Setup optimizado por los 3 Pilares Maestros
   const setupData = useMemo(() => {
     // Offset de periférico
@@ -177,7 +184,7 @@ export function AccSetupEngineerBay() {
         hotPsi: liveOrCapturedHotPsi[0],
         targetHotPsi: 26.85,
         tempOmi: liveOrCapturedOmi[0],
-        wearMm: [3.0, 3.0, 3.0],
+        wearMm: [liveOrCapturedWear[0], liveOrCapturedWear[0], liveOrCapturedWear[0]],
         padWearMm: 29.0,
         discWearMm: 32.0,
         wheelRateNm: 182000,
@@ -198,7 +205,7 @@ export function AccSetupEngineerBay() {
         hotPsi: liveOrCapturedHotPsi[1],
         targetHotPsi: 26.85,
         tempOmi: liveOrCapturedOmi[1],
-        wearMm: [3.0, 3.0, 3.0],
+        wearMm: [liveOrCapturedWear[1], liveOrCapturedWear[1], liveOrCapturedWear[1]],
         padWearMm: 29.0,
         discWearMm: 32.0,
         wheelRateNm: 182000,
@@ -218,7 +225,7 @@ export function AccSetupEngineerBay() {
         hotPsi: liveOrCapturedHotPsi[2],
         targetHotPsi: 26.85,
         tempOmi: liveOrCapturedOmi[2],
-        wearMm: [3.0, 3.0, 3.0],
+        wearMm: [liveOrCapturedWear[2], liveOrCapturedWear[2], liveOrCapturedWear[2]],
         padWearMm: 29.0,
         discWearMm: 32.0,
         wheelRateNm: 209000,
@@ -238,7 +245,7 @@ export function AccSetupEngineerBay() {
         hotPsi: liveOrCapturedHotPsi[3],
         targetHotPsi: 26.85,
         tempOmi: liveOrCapturedOmi[3],
-        wearMm: [3.0, 3.0, 3.0],
+        wearMm: [liveOrCapturedWear[3], liveOrCapturedWear[3], liveOrCapturedWear[3]],
         padWearMm: 29.0,
         discWearMm: 32.0,
         wheelRateNm: 209000,
@@ -711,6 +718,15 @@ Periférico: ${currentInputMode.toUpperCase()} | Estilo: ${currentDrivingStyle.t
                         {w.padWearMm.toFixed(2)} mm / {w.discWearMm.toFixed(2)} mm
                       </span>
                     </div>
+                    <div className="flex justify-between text-zinc-400">
+                      <span>Desgaste de goma:</span>
+                      <span className="text-emerald-400 font-mono font-semibold">
+                        {Math.max(0, Math.min(100, Math.round((1.0 - w.wearMm[0] / 3.0) * 100)))}%{" "}
+                        <span className="text-[10px] text-zinc-500 font-normal">
+                          ({w.wearMm[0].toFixed(2)} mm de 3.00 mm)
+                        </span>
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -790,6 +806,15 @@ Periférico: ${currentInputMode.toUpperCase()} | Estilo: ${currentDrivingStyle.t
                       <span>Desgaste de pastillas / disco:</span>
                       <span className="text-zinc-300">
                         {w.padWearMm.toFixed(2)} mm / {w.discWearMm.toFixed(2)} mm
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-zinc-400">
+                      <span>Desgaste de goma:</span>
+                      <span className="text-emerald-400 font-mono font-semibold">
+                        {Math.max(0, Math.min(100, Math.round((1.0 - w.wearMm[0] / 3.0) * 100)))}%{" "}
+                        <span className="text-[10px] text-zinc-500 font-normal">
+                          ({w.wearMm[0].toFixed(2)} mm de 3.00 mm)
+                        </span>
                       </span>
                     </div>
                   </div>

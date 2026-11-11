@@ -356,18 +356,18 @@ class LocalAIEngineer:
         worst_tire = tire_labels[worst_idx]
         worst_val = wear_pcts[worst_idx]
 
-        if avg_wear <= 4:
-            msg = f"Reporte de gomas: neumáticos en excelente estado, desgaste al {avg_wear}% y vida al {avg_life}%. Tienes agarre total."
-        elif avg_wear <= 12:
+        if avg_wear <= 2:
+            msg = f"Reporte de gomas: neumáticos nuevos al {avg_life}% de vida, desgaste mínimo al {avg_wear}%. Tienes agarre total."
+        elif avg_wear <= 8:
             msg = f"Estado de neumáticos: gomas al {avg_life}% de vida, desgaste medio en {avg_wear}%. Degradación baja y ritmo estable."
-        elif avg_wear <= 22:
-            if abs(front_wear - rear_wear) >= 4:
+        elif avg_wear <= 18:
+            if abs(front_wear - rear_wear) >= 3:
                 eje = "delantero" if front_wear > rear_wear else "trasero"
                 val_eje = max(front_wear, rear_wear)
                 msg = f"Reporte de neumáticos: desgaste medio en {avg_wear}%, vida al {avg_life}%. El tren {eje} sufre más con {val_eje}% de desgaste."
             else:
                 msg = f"Reporte de gomas: desgaste en {avg_wear}%, vida al {avg_life}%. Agarre constante, el {worst_tire} está en {worst_val}%."
-        elif avg_wear <= 35:
+        elif avg_wear <= 30:
             msg = f"Atención a las gomas: desgaste medio en {avg_wear}%, vida al {avg_life}%. El neumático {worst_tire} acumula {worst_val}% de desgaste. Cuida el apoyo en curvas rápidas."
         else:
             msg = f"Alerta de degradación: gomas al {avg_life}% de vida con {avg_wear}% de desgaste. Pérdida sensible de agarre, ve planeando la parada en boxes."
