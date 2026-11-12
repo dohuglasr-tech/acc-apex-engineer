@@ -66,6 +66,8 @@ export interface TelemetryFrame {
   brake_bias: number;
   tyres_out?: number;
   is_off_track?: boolean;
+  tyre_dirty_level?: [number, number, number, number];
+  is_in_dirt?: boolean;
   // Realismo de simulación ACC
   realism_fuel_on?: boolean;
   realism_tire_on?: boolean;

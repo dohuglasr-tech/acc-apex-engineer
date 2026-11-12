@@ -279,6 +279,8 @@ class TelemetrySample:
     max_fuel: float = 120.0
     tyres_out: int = 0
     is_off_track: bool = False
+    tyre_dirty_level: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
+    is_in_dirt: bool = False
     
     # --- CONFIGURACIÓN DE REALISMO EN ACC (Física de Simulación) ---
     realism_fuel_on: bool = True
@@ -366,6 +368,8 @@ class TelemetrySample:
             "max_fuel": round(self.max_fuel, 1),
             "tyres_out": self.tyres_out,
             "is_off_track": self.is_off_track,
+            "tyre_dirty_level": [round(x, 2) for x in self.tyre_dirty_level],
+            "is_in_dirt": self.is_in_dirt,
             # Realismo
             "realism_fuel_on": self.realism_fuel_on,
             "realism_tire_on": self.realism_tire_on,
@@ -623,9 +627,11 @@ class ACCSharedMemoryReader:
             compound_label = "MOJADO" if "wet" in raw_compound else "SECO"
 
             # Detección física precisa de límites de pista y ruedas fuera del trazado
-            # 0 = en pista, 1-2 = pianos/límites legales, 3 = superación de límites, 4 = fuera de pista total
+            dirty_levels = [float(phys.tyreDirtyLevel[i]) for i in range(4)]
+            is_in_dirt = any(x > 0.04 for x in dirty_levels)
             tyres_out = max(0, min(4, int(phys.numberOfTyresOut)))
-            is_off_track = tyres_out >= 3
+            # 2 ruedas fuera = superación de límites de pista; >= 3 o grava/hierba = fuera del asfalto
+            is_off_track = (tyres_out >= 2) or is_in_dirt
 
             # Filtrado estricto de tiempos de vuelta válidos de ACC
             # Kunos ACC inicializa iBestTime e iLastTime en 2147483647 (INT32_MAX) cuando no hay vueltas
@@ -698,6 +704,8 @@ class ACCSharedMemoryReader:
                 max_fuel=float(stc.maxFuel) if (stc and stc.maxFuel > 10.0) else 120.0,
                 tyres_out=tyres_out,
                 is_off_track=is_off_track,
+                tyre_dirty_level=dirty_levels,
+                is_in_dirt=is_in_dirt,
                 # Realismo
                 realism_fuel_on=realism_fuel_on,
                 realism_tire_on=realism_tire_on,

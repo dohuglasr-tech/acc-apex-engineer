@@ -588,38 +588,75 @@ class LocalAIEngineer:
     def _check_off_track_events(self, sample: TelemetrySample, now: float) -> None:
         """
         Detecta en tiempo real cuando el piloto excede los límites del trazado o se sale de la pista.
-        0 = en asfalto, 1-2 = pianos, 3 = tres ruedas fuera (límites), 4 = salida de pista total (grava/hierba).
-        Emite aviso prioritario para interrumpir mensajes secundarios y alertar al piloto.
+        - tyres_out >= 4 o ruedas en grava/hierba: ¡Salida de pista completa!
+        - tyres_out == 3: ¡Tres ruedas fuera del trazado!
+        - tyres_out == 2: ¡Cuidado con los límites de pista! Dos ruedas fuera.
+        - Al reincorporarse: ¡De vuelta en el asfalto!
+        Emite aviso prioritario para interrumpir mensajes secundarios y alertar al piloto de inmediato.
         """
-        if sample.is_in_pit or sample.is_in_pit_lane or sample.speed_kmh < 26.0:
+        if sample.is_in_pit or sample.is_in_pit_lane:
+            self._is_currently_off_track = False
+            return
+
+        # Umbral mínimo: solo ignorar si el coche está totalmente detenido al arrancar en el garaje
+        if sample.speed_kmh < 4.0 and sample.completed_laps == 0:
             self._is_currently_off_track = False
             return
 
         tyres_out = getattr(sample, "tyres_out", 0)
-        is_off = getattr(sample, "is_off_track", False) or tyres_out >= 3
+        dirty = getattr(sample, "tyre_dirty_level", [0.0, 0.0, 0.0, 0.0])
+        is_in_dirt = any(x > 0.04 for x in dirty)
+        is_off = (tyres_out >= 2) or is_in_dirt or getattr(sample, "is_off_track", False)
 
         if is_off:
             if not self._is_currently_off_track:
                 self._is_currently_off_track = True
                 self._off_track_start_ts = now
 
-                # Cooldown de 9 segundos para no spamear en la misma excursión
-                if (now - self._last_off_track_alert_ts) > 9.0:
+                # Cooldown de 4.0 segundos para no saturar si continúa fuera
+                if (now - self._last_off_track_alert_ts) > 4.0:
                     self._last_off_track_alert_ts = now
                     self.last_speech_ts = now
-                    if tyres_out >= 4:
-                        msg = "¡Salida de pista completa! Mantén el volante recto y reincorpora con precaución."
-                    else:
-                        msg = "¡Cuidado, tres ruedas fuera del trazado! Cuidado con los límites de pista."
-                    self._broadcast_radio(msg, "alert", priority=True)
+
+                    if tyres_out >= 4 or is_in_dirt:
+                        phrases = [
+                            "¡Salida de pista completa! Cuidado con la grava y la hierba, mantén el volante recto y reincorpora con precaución.",
+                            "¡Coche fuera de pista! Cuidado al volver al asfalto para no trompear.",
+                            "¡Te has salido del trazado! Calma con el acelerador, mantén la dirección firme y busca el asfalto.",
+                        ]
+                    elif tyres_out == 3:
+                        phrases = [
+                            "¡Tres ruedas fuera del trazado! Has superado los límites de pista.",
+                            "¡Atención, tres ruedas fuera! Cuidado con la sanción de límites de pista.",
+                        ]
+                    else:  # tyres_out == 2
+                        phrases = [
+                            "¡Cuidado con los límites de pista! Dos ruedas fuera del asfalto.",
+                            "Atención: dos ruedas fuera de la línea blanca. Ajusta la trazada para no invalidar.",
+                        ]
+
+                    idx = int(now) % len(phrases)
+                    self._broadcast_radio(phrases[idx], "alert", priority=True)
+            else:
+                # Si sigue fuera de pista por más de 5 segundos (ej. atascado en grava)
+                if (now - self._off_track_start_ts) >= 5.0 and (now - self._last_off_track_alert_ts) > 5.0:
+                    self._last_off_track_alert_ts = now
+                    self.last_speech_ts = now
+                    self._broadcast_radio("Seguimos fuera de pista. Tracciona suave en primera o marcha atrás para salir de la grava.", "alert", priority=True)
         else:
             if self._is_currently_off_track:
                 off_dur = now - self._off_track_start_ts
                 self._is_currently_off_track = False
-                if off_dur > 2.0 and (now - self._last_off_track_alert_ts) > 6.0:
+                if off_dur > 0.8 and (now - self._last_off_track_alert_ts) > 3.0:
                     self._last_off_track_alert_ts = now
                     self.last_speech_ts = now
-                    self._broadcast_radio("De vuelta en el asfalto. Tracción limpia y concéntrate en la siguiente curva.", "coaching")
+                    reentry_phrases = [
+                        "De vuelta en el asfalto. Tracción limpia y concéntrate en la siguiente curva.",
+                        "Asfalto limpio. Recupera el ritmo y a por el siguiente sector.",
+                        "En pista de nuevo. Calienta las gomas y retoma tu ritmo de carrera.",
+                    ]
+                    idx = int(now) % len(reentry_phrases)
+                    self._broadcast_radio(reentry_phrases[idx], "coaching")
 
     def _check_preventative_coaching(self, sample: TelemetrySample, now: float) -> None:
         """

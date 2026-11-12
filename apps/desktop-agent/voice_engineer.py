@@ -178,6 +178,36 @@ class VoiceEngineer:
         )
         self._thread.start()
 
+        # Precalentamiento de frases críticas de alta prioridad (salidas de pista y límites)
+        self._preload_thread = threading.Thread(
+            target=self._preload_critical_phrases, daemon=True, name="VoicePreloadThread"
+        )
+        self._preload_thread.start()
+
+    def _preload_critical_phrases(self) -> None:
+        """Pre-sintetiza alertas críticas en segundo plano para garantizar reproducción con cero latencia."""
+        critical_alerts = [
+            "¡Salida de pista completa! Cuidado con la grava y la hierba, mantén el volante recto y reincorpora con precaución.",
+            "¡Coche fuera de pista! Cuidado al volver al asfalto para no trompear.",
+            "¡Te has salido del trazado! Calma con el acelerador, mantén la dirección firme y busca el asfalto.",
+            "¡Tres ruedas fuera del trazado! Has superado los límites de pista.",
+            "¡Atención, tres ruedas fuera! Cuidado con la sanción de límites de pista.",
+            "¡Cuidado con los límites de pista! Dos ruedas fuera del asfalto.",
+            "Atención: dos ruedas fuera de la línea blanca. Ajusta la trazada para no invalidar.",
+            "Seguimos fuera de pista. Tracciona suave en primera o marcha atrás para salir de la grava.",
+            "De vuelta en el asfalto. Tracción limpia y concéntrate en la siguiente curva.",
+            "Asfalto limpio. Recupera el ritmo y a por el siguiente sector.",
+            "En pista de nuevo. Calienta las gomas y retoma tu ritmo de carrera.",
+        ]
+        for phrase in critical_alerts:
+            try:
+                clean = sanitize_spanish_for_speech(phrase)
+                out_p = self._get_cache_path(clean)
+                if not out_p.exists() or out_p.stat().st_size <= 256:
+                    asyncio.run(self._synthesize_edge_neural(clean, out_p))
+            except Exception:
+                pass
+
     def set_volume(self, volume: int) -> None:
         """Ajusta el volumen de la radio del agente (0% a 100%)."""
         self.volume = max(0, min(100, int(volume)))

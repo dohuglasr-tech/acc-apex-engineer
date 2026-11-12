@@ -844,9 +844,17 @@ class OverlayHUD:
                 fg=wear_color,
             )
 
-        if getattr(sample, "is_off_track", False) or getattr(sample, "tyres_out", 0) >= 3:
-            t_out = getattr(sample, "tyres_out", 4)
-            self.lbl_setup.configure(text=f"¡FUERA DEL TRAZADO! ({t_out} RUEDAS FUERA)", fg="#E10600")
+        t_out = getattr(sample, "tyres_out", 0)
+        is_dirt = getattr(sample, "is_in_dirt", False)
+        is_off = getattr(sample, "is_off_track", False) or (t_out >= 2) or is_dirt
+
+        if is_off:
+            if t_out >= 4 or is_dirt:
+                self.lbl_setup.configure(text="¡SALIDA DE PISTA TOTAL! (HIERBA/GRAVA)", fg="#E10600")
+            elif t_out == 3:
+                self.lbl_setup.configure(text="¡FUERA DEL TRAZADO! (3 RUEDAS FUERA)", fg="#E10600")
+            else:
+                self.lbl_setup.configure(text="¡LÍMITES DE PISTA EXCEDIDOS! (2 RUEDAS)", fg="#F59E0B")
         elif live_alert:
             self.lbl_setup.configure(text=f"AVISO: {live_alert}", fg="#E10600")
         elif has_driving_assists:

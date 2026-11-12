@@ -160,7 +160,7 @@ export default function DashboardPage() {
   const fuelRemaining = frame?.fuel ?? 42.0;
   const avgFuelPerLap = 3.35; // Litros estándar GT3
   const lapsRemaining = fuelRemaining > 0 ? Math.floor(fuelRemaining / avgFuelPerLap) : 0;
-  const isOffTrack = frame?.is_off_track || (frame?.tyres_out ?? 0) >= 3;
+  const isOffTrack = frame?.is_off_track || (frame?.tyres_out ?? 0) >= 2 || (frame?.is_in_dirt ?? false);
 
   // Realismo de simulación (ACC Física)
   const realismFuel = frame?.realism_fuel_on ?? ((frame?.aid_fuel_rate ?? 1.0) > 0.05);
