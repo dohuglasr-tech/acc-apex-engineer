@@ -161,7 +161,17 @@ export default function DashboardPage() {
   const avgFuelPerLap = 3.35; // Litros estándar GT3
   const lapsRemaining = fuelRemaining > 0 ? Math.floor(fuelRemaining / avgFuelPerLap) : 0;
   const isOffTrack = frame?.is_off_track || (frame?.tyres_out ?? 0) >= 3;
-  const hasAssists = frame?.has_assists_active || (frame?.aid_fuel_rate ?? 1.0) <= 0.05;
+
+  // Realismo de simulación (ACC Física)
+  const realismFuel = frame?.realism_fuel_on ?? ((frame?.aid_fuel_rate ?? 1.0) > 0.05);
+  const realismTire = frame?.realism_tire_on ?? ((frame?.aid_tire_rate ?? 1.0) > 0.05);
+  const realismDamagePct = frame?.realism_damage_pct ?? Math.round((frame?.aid_mechanical_damage ?? 1.0) * 100);
+  const realismPenalties = frame?.realism_penalties_on ?? frame?.penalties_enabled ?? true;
+
+  // Ayudas de conducción (Asistencias de pilotaje)
+  const hasDrivingAssists = frame?.has_driving_assists ?? frame?.has_assists_active ?? false;
+  const drivingAssistsList = frame?.driving_assists_list ?? frame?.active_assists_list ?? [];
+  const drivingAssistsSummary = frame?.driving_assists_summary || (hasDrivingAssists ? drivingAssistsList.join(" · ") : "MANUAL PURO (PRO)");
 
   return (
     <div className="space-y-6 max-w-[1440px] mx-auto pb-12">
@@ -389,29 +399,116 @@ export default function DashboardPage() {
             <span className="text-xs">⛽</span>
           </div>
           <div className="text-xl sm:text-2xl font-bold font-mono text-white mt-1">
-            {fuelRemaining.toFixed(1)} L
+            {realismFuel ? `${fuelRemaining.toFixed(1)} L` : "INFINITO"}
           </div>
           <div className="text-[10px] font-mono text-amber-400 mt-0.5">
-            ~{avgFuelPerLap.toFixed(2)} L/VTA · {lapsRemaining} VTAS
+            {realismFuel
+              ? `~${avgFuelPerLap.toFixed(2)} L/VTA · ${lapsRemaining} VTAS`
+              : "REALISMO: CONSUMO OFF"}
           </div>
         </div>
 
-        {/* ESTADO DE PISTA Y AYUDAS */}
+        {/* LÍMITES DE PISTA */}
         <div className="col-span-2 md:col-span-1 bg-[#0C0C12] border border-zinc-800/90 rounded-xl p-3.5 shadow-md">
           <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-zinc-400">
-            LÍMITES & AYUDAS
+            LÍMITES DE PISTA
           </div>
           <div className="text-base sm:text-lg font-bold font-mono mt-1">
             {isOffTrack ? (
               <span className="text-red-400">FUERA DE PISTA</span>
-            ) : hasAssists ? (
-              <span className="text-cyan-400">MODO TRAZADA</span>
             ) : (
-              <span className="text-emerald-400">TRAZADO VÁLIDO</span>
+              <span className="text-emerald-400">DENTRO LÍMITES</span>
             )}
           </div>
           <div className="text-[10px] font-mono text-zinc-500 mt-0.5">
-            {hasAssists ? "AYUDAS DETECTADAS" : "SIN ASISTENCIAS"}
+            {isOffTrack
+              ? `${frame?.tyres_out ?? 4} RUEDAS FUERA`
+              : "TRAZADO VÁLIDO GT3"}
+          </div>
+        </div>
+      </div>
+
+      {/* =========================================================================
+          BARRA DE ESTADO DE SIMULACIÓN: SEPARACIÓN DE REALISMO Y AYUDAS
+      ========================================================================= */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 font-mono text-xs">
+        {/* PANEL DE REALISMO (Física del Simulador) */}
+        <div className="bg-[#0C0C12] border border-zinc-800 rounded-xl p-3.5 flex items-center justify-between shadow-md">
+          <div className="flex items-center gap-3">
+            <span className="text-base">⚙️</span>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold flex items-center gap-2">
+                <span>REALISMO ACC (FÍSICA)</span>
+                <span
+                  className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                    realismFuel && realismTire
+                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                      : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                  }`}
+                >
+                  {realismFuel && realismTire ? "SIMULACIÓN COMPLETA" : "PERSONALIZADO"}
+                </span>
+              </div>
+              <div className="text-zinc-300 text-xs mt-1">
+                <span className={realismFuel ? "text-emerald-400 font-bold" : "text-amber-400"}>
+                  GAS: {realismFuel ? "ACTIVADO" : "ILIMITADO"}
+                </span>
+                <span className="text-zinc-600 mx-1.5">·</span>
+                <span className={realismTire ? "text-emerald-400 font-bold" : "text-amber-400"}>
+                  GOMAS: {realismTire ? "ACTIVADO" : "SIN DESGASTE"}
+                </span>
+                <span className="text-zinc-600 mx-1.5">·</span>
+                <span className="text-zinc-400">DAÑO: {realismDamagePct}%</span>
+                <span className="text-zinc-600 mx-1.5">·</span>
+                <span className={realismPenalties ? "text-zinc-400" : "text-zinc-500"}>
+                  SANCIONES: {realismPenalties ? "ON" : "OFF"}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right hidden sm:block">
+            <div className="text-[9px] text-zinc-500">CONSUMO & DESGASTE</div>
+            <div className={`font-bold ${realismFuel ? "text-emerald-400" : "text-amber-400"}`}>
+              {realismFuel ? "100% ACTIVO" : "OFF"}
+            </div>
+          </div>
+        </div>
+
+        {/* PANEL DE AYUDAS DE CONDUCCIÓN (Asistencias de Pilotaje) */}
+        <div className="bg-[#0C0C12] border border-zinc-800 rounded-xl p-3.5 flex items-center justify-between shadow-md">
+          <div className="flex items-center gap-3">
+            <span className="text-base">🎮</span>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-zinc-400 font-bold flex items-center gap-2">
+                <span>AYUDAS DE CONDUCCIÓN</span>
+                <span
+                  className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                    hasDrivingAssists
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/30"
+                      : "bg-zinc-800 text-zinc-300 border border-zinc-700"
+                  }`}
+                >
+                  {hasDrivingAssists ? "ASISTENCIAS ACTIVAS" : "MANUAL PURO (PRO)"}
+                </span>
+              </div>
+              <div className="text-zinc-300 text-xs mt-1">
+                {hasDrivingAssists ? (
+                  <span className="text-cyan-300 font-medium">
+                    {drivingAssistsSummary || "Caja automática · Trazada ideal"}
+                  </span>
+                ) : (
+                  <span className="text-zinc-400">
+                    Sin asistencias de juego. Control 100% manual del piloto.
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="text-right hidden sm:block">
+            <div className="text-[9px] text-zinc-500">MODO COACHING</div>
+            <div className={`font-bold ${hasDrivingAssists ? "text-cyan-400" : "text-zinc-400"}`}>
+              {hasDrivingAssists ? "TRAZADA Y VÉRTICES" : "ESTILO PRO"}
+            </div>
           </div>
         </div>
       </div>

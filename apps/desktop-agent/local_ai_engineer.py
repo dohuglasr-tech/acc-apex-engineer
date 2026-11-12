@@ -347,22 +347,24 @@ class LocalAIEngineer:
         # 5. MONITOREO DE ESTADO DEL COCHE, AYUDAS, DESGASTE Y COACHING PREVENTIVO
         # Silenciado en "telemetry"
         if self.voice_mode in ("companion", "car_state"):
-            self._check_assists_reminder(sample, now)
+            self._check_realism_and_assists_status(sample, now)
             self._check_car_state_alerts(sample, now)
             self._check_tyre_wear_reports(sample, now)
             self._check_preventative_coaching(sample, now)
 
         return self.get_state()
 
-    def _check_assists_reminder(self, sample: TelemetrySample, now: float) -> None:
+    def _check_realism_and_assists_status(self, sample: TelemetrySample, now: float) -> None:
         """
-        Detecta si el usuario tiene ayudas activadas (como sin consumo de combustible, sin desgaste
-        de neumáticos, sin daños, control de estabilidad, línea ideal, etc.). Si las detecta, se lo
-        hace saber en repetidas ocasiones (sin ser invasivo) y orienta la asistencia de radio
-        exclusivamente a optimizar trazadas, puntos de frenada y recortar tiempo de vuelta.
+        Separa estrictamente la física de REALISMO (combustible, neumáticos, daños, sanciones)
+        de las AYUDAS DE CONDUCCIÓN (caja automática, embrague auto, trazada ideal, estabilidad).
+        Si el realismo tiene consumo y neumáticos activados, Álvaro SIEMPRE los gestiona al 100%.
+        Las ayudas de conducción son asistencias de pilotaje que se aconsejan constructivamente.
         """
-        if not getattr(sample, "has_assists_active", False):
-            return
+        realism_fuel = getattr(sample, "realism_fuel_on", True)
+        realism_tire = getattr(sample, "realism_tire_on", True)
+        has_assists = getattr(sample, "has_driving_assists", False) or getattr(sample, "has_assists_active", False)
+        assists_summary = getattr(sample, "driving_assists_summary", "")
 
         # Solo hablar en rectas y condiciones de conducción estables para no desconcentrar
         if (
@@ -382,13 +384,32 @@ class LocalAIEngineer:
         if self._assists_notified_count == 0:
             if (now - self._last_assists_reminder_ts) < 8.0:
                 return
-            assists_list = getattr(sample, "active_assists_list", [])
-            assists_summary = ", ".join(assists_list[:3]) if assists_list else "ayudas activadas"
-            msg = (
-                f"He detectado ayudas de simulación activas: {assists_summary}. "
-                f"Activamos el modo Trazada y Contrarreloj: omitiremos la gestión de combustible y neumáticos "
-                f"para enfocarnos al cien por cien en tus puntos de frenada, vértices y bajar tu tiempo por vuelta."
-            )
+
+            if has_assists:
+                if realism_fuel and realism_tire:
+                    msg = (
+                        f"Configuración detectada: Realismo de carrera al 100% con gestión de combustible y neumáticos activa. "
+                        f"En asistencias llevas {assists_summary}. "
+                        f"Monitorizaremos el consumo, presiones y gomas en cada vuelta mientras te asisto con las referencias y la trazada."
+                    )
+                else:
+                    msg = (
+                        f"Configuración detectada: En realismo tienes consumo o desgaste desactivado. "
+                        f"En asistencias llevas {assists_summary}. "
+                        f"Modo Contrarreloj: nos enfocamos al cien por cien en tus puntos de frenada, vértices y bajar tu tiempo por vuelta."
+                    )
+            else:
+                if realism_fuel and realism_tire:
+                    msg = (
+                        "Configuración 100% Pro: Sin ayudas de conducción y realismo completo de carrera. "
+                        "Control absoluto en tus manos, gestionaremos neumáticos y combustible en cada tanda."
+                    )
+                else:
+                    msg = (
+                        "Configuración detectada: Conducción manual pura sin ayudas. "
+                        "Consumo o desgaste desactivados en realismo. Enfoque total en el cronómetro."
+                    )
+
             self._assists_notified_count = 1
             self._last_assists_reminder_ts = now
             self._last_assists_reminder_lap = sample.completed_laps
@@ -396,21 +417,37 @@ class LocalAIEngineer:
             self._broadcast_radio(msg, "alert")
             return
 
+        # Si el piloto NO tiene ayudas de conducción activas, no emitir recordatorios de ayudas
+        if not has_assists:
+            return
+
         # 2. Recordatorios periódicos en repetidas ocasiones (No invasivos):
         # Disparo: cada 3 vueltas completadas O si transcurren más de 240 segundos (4 minutos) de rodaje
-        lap_interval = sample.completed_laps >= (self._last_assists_reminder_lap + 3) and sample.completed_laps > 0
+        lap_interval = (
+            sample.completed_laps >= (self._last_assists_reminder_lap + 3)
+            and sample.completed_laps > 0
+        )
         time_interval = (now - self._last_assists_reminder_ts) >= 240.0
 
         if not lap_interval and not time_interval:
             return
 
         idx = (self._assists_notified_count - 1) % 4
-        reminders = [
-            "Recordatorio de telemetría: sigues rodando con ayudas activadas. Mantenemos el foco exclusivamente en apurar las frenadas, morder los vértices y rebajar el crono.",
-            "Seguimos en Modo Trazada Pura con ayudas de juego. Trata de soltar el freno más progresivo hacia el punto de giro para maximizar la velocidad en el vértice.",
-            "Ayudas del simulador detectadas activas. Concéntrate en la línea de carrera y abrir la dirección pronto al salir de curva para traccionar con fuerza.",
-            "Modo Contrarreloj activo. Sin desgaste de neumáticos ni consumo, toda la ganancia está en la trazada y en recortar metros en cada frenada.",
-        ]
+        if realism_fuel and realism_tire:
+            reminders = [
+                f"Recordatorio de pilotaje: sigues rodando con {assists_summary}. Aprovecha para concentrarte en el cartel de frenada y morder el vértice; combustible y gomas están bajo control.",
+                f"Consejo de telemetría: con las ayudas de conducción activas, anticípate al punto de giro; el desgaste de neumáticos y consumo se mantienen en ventana óptima.",
+                f"Seguimos con {assists_summary}. Busca la trazada ideal y abre volante con suavidad para salir con tracción limpia hacia la recta.",
+                f"Ritmo constante en pista. Asistencias de conducción activas y telemetría de neumáticos y combustible al cien por cien.",
+            ]
+        else:
+            reminders = [
+                "Modo Contrarreloj activo: sin desgaste ni consumo en el realismo. Toda la ganancia está en apurar las frenadas y arañar metros al crono.",
+                f"Seguimos rodando con {assists_summary}. Trata de soltar el freno más progresivo hacia el punto de giro para maximizar la velocidad en el vértice.",
+                "Sin consumo ni degradación de neumáticos: concéntrate en la línea de carrera y abrir dirección pronto al salir de curva.",
+                "Modo Trazada Pura. Aprovecha el tanque y gomas infinitas para buscar el límite absoluto en cada sector.",
+            ]
+
         msg = reminders[idx]
         self._assists_notified_count += 1
         self._last_assists_reminder_ts = now
@@ -423,8 +460,8 @@ class LocalAIEngineer:
         Informa de forma proactiva y periódica el estado y porcentaje de desgaste
         de los neumáticos (delanteros y traseros) en rectas para mantener al piloto 100% informado.
         """
-        # Si el usuario tiene desactivado el desgaste de neumáticos en el juego, silenciamos el reporte
-        if getattr(sample, "aid_tire_rate", 1.0) <= 0.05:
+        # Si el usuario tiene desactivado el desgaste de neumáticos en el menú de realismo, silenciamos el reporte
+        if getattr(sample, "realism_tire_on", getattr(sample, "aid_tire_rate", 1.0) > 0.05) is False:
             return
 
         if self.active_corner is not None or sample.speed_kmh < 65.0 or sample.is_in_pit or sample.is_in_pit_lane:
@@ -492,7 +529,7 @@ class LocalAIEngineer:
 
         # 1. Combustible crítico (solo si el consumo de combustible está activado en el simulador)
         if (
-            getattr(sample, "aid_fuel_rate", 1.0) > 0.05
+            getattr(sample, "realism_fuel_on", getattr(sample, "aid_fuel_rate", 1.0) > 0.05)
             and 0.0 < sample.fuel <= 9.0
             and self._last_car_alert_key != f"fuel_{int(sample.fuel)}"
         ):
@@ -535,7 +572,7 @@ class LocalAIEngineer:
 
         # 4. Combustible intermedio y reporte de autonomía en carrera
         if (
-            getattr(sample, "aid_fuel_rate", 1.0) > 0.05
+            getattr(sample, "realism_fuel_on", getattr(sample, "aid_fuel_rate", 1.0) > 0.05)
             and sample.fuel > 9.0
             and (now - self._last_car_state_call_ts) >= 60.0
             and self._last_car_alert_key != f"fuel_stint_{int(sample.fuel // 8)}"
@@ -619,7 +656,7 @@ class LocalAIEngineer:
         category = "coaching"
 
         # 1. Alerta preventiva de degradación de neumáticos por estrés térmico o fricción
-        if max_tyre_temp > 92.5 or (front_wear_val < 2.6 and getattr(sample, "aid_tire_rate", 1.0) > 0.05):
+        if max_tyre_temp > 92.5 or (front_wear_val < 2.6 and getattr(sample, "realism_tire_on", getattr(sample, "aid_tire_rate", 1.0) > 0.05)):
             tip_text = (
                 "Tip preventivo: Si sigues con este modo de manejo forzando la dirección en las entradas, "
                 "el desgaste de tus neumáticos delanteros aumentará más rápido. Modula más suave el freno para rotar el coche y cuidar la goma."
@@ -631,7 +668,7 @@ class LocalAIEngineer:
                 "la degradación de frenos se disparará y perderás mordida en las curvas rápidas. Haz un poco de coasting antes del vértice."
             )
         # 3. Alerta preventiva de consumo de combustible excesivo por estirar marchas cortas
-        elif sample.gear <= 2 and sample.gas > 0.88 and getattr(sample, "aid_fuel_rate", 1.0) > 0.05:
+        elif sample.gear <= 2 and sample.gas > 0.88 and getattr(sample, "realism_fuel_on", getattr(sample, "aid_fuel_rate", 1.0) > 0.05):
             tip_text = (
                 "Tip preventivo: Con este modo de acelerar tan a fondo en marchas bajas, tu consumo de combustible aumentará más de la cuenta. "
                 "Sube de marcha antes si queremos llegar con margen al final de la tanda."

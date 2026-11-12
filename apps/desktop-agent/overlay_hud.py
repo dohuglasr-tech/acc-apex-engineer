@@ -799,11 +799,15 @@ class OverlayHUD:
             fg=psi_color,
         )
 
-        if getattr(sample, "has_assists_active", False):
-            mode_es = {"keyboard": "TECLADO", "gamepad": "MANDO", "wheel": "VOLANTE"}.get(
-                self.input_mode, "MANDO"
-            )
-            self.lbl_mode.configure(text=f"{mode_es} · AYUDAS ON", fg="#38BDF8")
+        has_driving_assists = getattr(sample, "has_driving_assists", False) or getattr(sample, "has_assists_active", False)
+        driving_summary = getattr(sample, "driving_assists_summary", "")
+        mode_es = {"keyboard": "TECLADO", "gamepad": "MANDO", "wheel": "VOLANTE"}.get(
+            self.input_mode, "MANDO"
+        )
+        if has_driving_assists:
+            self.lbl_mode.configure(text=f"{mode_es} · AYUDAS ({driving_summary[:22]})", fg="#38BDF8")
+        else:
+            self.lbl_mode.configure(text=f"{mode_es} · MODO PRO (MANUAL)", fg="#10B981")
 
         w = sample.tyre_wear or [3.0, 3.0, 3.0, 3.0]
         w_pct = [round(max(0.0, min(100.0, (1.0 - (val / 3.0)) * 100.0))) for val in w]
@@ -816,16 +820,23 @@ class OverlayHUD:
             else f"{sample.fuel:.1f}L"
         )
 
-        has_assists = getattr(sample, "has_assists_active", False)
-        aid_tire = getattr(sample, "aid_tire_rate", 1.0)
-        aid_fuel = getattr(sample, "aid_fuel_rate", 1.0)
+        realism_tire = getattr(sample, "realism_tire_on", getattr(sample, "aid_tire_rate", 1.0) > 0.05)
+        realism_fuel = getattr(sample, "realism_fuel_on", getattr(sample, "aid_fuel_rate", 1.0) > 0.05)
 
-        if has_assists and (aid_tire <= 0.05 or aid_fuel <= 0.05):
-            tire_info = "GOMAS 100% (DESGASTE OFF)" if aid_tire <= 0.05 else f"GOMAS {avg_life}%"
-            fuel_info = f"GAS {sample.fuel:.1f}L (OFF)" if aid_fuel <= 0.05 else f"{sample.fuel:.1f}L"
+        if not realism_tire and not realism_fuel:
             self.lbl_wear.configure(
-                text=f"MODO TRAZADA // {tire_info} | {fuel_info}",
-                fg="#38BDF8",
+                text="REALISMO // CONSUMO OFF | DESGASTE OFF (CONTRARRELOJ)",
+                fg="#F59E0B",
+            )
+        elif not realism_tire:
+            self.lbl_wear.configure(
+                text=f"REALISMO // GOMAS FIJAS (OFF) | {fuel_str}",
+                fg="#F59E0B",
+            )
+        elif not realism_fuel:
+            self.lbl_wear.configure(
+                text=f"REALISMO // GAS INFINITO (OFF) | GOMAS: {avg_w}% DESGASTE ({avg_life}% VIDA)",
+                fg="#F59E0B",
             )
         else:
             self.lbl_wear.configure(
@@ -838,7 +849,7 @@ class OverlayHUD:
             self.lbl_setup.configure(text=f"¡FUERA DEL TRAZADO! ({t_out} RUEDAS FUERA)", fg="#E10600")
         elif live_alert:
             self.lbl_setup.configure(text=f"AVISO: {live_alert}", fg="#E10600")
-        elif has_assists:
-            self.lbl_setup.configure(text=f"GARAJE: {self.last_setup_label} [TRAZADA]", fg="#38BDF8")
+        elif has_driving_assists:
+            self.lbl_setup.configure(text=f"GARAJE: {self.last_setup_label} [ASISTENCIAS ACTIVAS]", fg="#38BDF8")
         else:
             self.lbl_setup.configure(text=f"GARAJE: {self.last_setup_label}", fg="#A1A1AA")

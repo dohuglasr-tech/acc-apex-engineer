@@ -534,9 +534,9 @@ class ApexDesktopAgentApp:
         self, strat: FuelStrategyResult, sample: TelemetrySample
     ) -> None:
         """Emite por radio la estrategia de combustible antes de salir de boxes."""
-        if getattr(sample, "aid_fuel_rate", 1.0) <= 0.05:
-            self.hud.set_setup_status("BOXES: AYUDAS ON · COMBUSTIBLE ILIMITADO")
-            msg = "Coche en garaje. Tienes el consumo de combustible y desgaste desactivados. Carga el combustible libremente y sal a pista a buscar tu vuelta rápida perfecta."
+        if getattr(sample, "realism_fuel_on", True) is False or getattr(sample, "aid_fuel_rate", 1.0) <= 0.05:
+            self.hud.set_setup_status("BOXES: REALISMO -> COMBUSTIBLE ILIMITADO")
+            msg = "Coche en garaje. En el menú de realismo tienes el consumo desactivado (tanque infinito). Carga el combustible libremente y sal a pista a buscar tu vuelta rápida perfecta."
             self.voice.speak(msg)
             self.ai_engineer._broadcast_radio(msg, "strategy")
             return

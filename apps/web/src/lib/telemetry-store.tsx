@@ -66,9 +66,30 @@ export interface TelemetryFrame {
   brake_bias: number;
   tyres_out?: number;
   is_off_track?: boolean;
+  // Realismo de simulación ACC
+  realism_fuel_on?: boolean;
+  realism_tire_on?: boolean;
+  realism_damage_pct?: number;
+  realism_penalties_on?: boolean;
+  realism_summary?: string;
   aid_fuel_rate?: number;
   aid_tire_rate?: number;
   aid_mechanical_damage?: number;
+  penalties_enabled?: boolean;
+  // Ayudas de conducción ACC
+  has_driving_assists?: boolean;
+  driving_assists_list?: string[];
+  driving_assists_summary?: string;
+  assist_auto_gearbox?: boolean;
+  assist_auto_clutch?: boolean;
+  assist_ideal_line?: boolean;
+  assist_stability_pct?: number;
+  assist_auto_blip?: boolean;
+  auto_shifter_on?: boolean;
+  aid_auto_clutch?: boolean;
+  aid_auto_blip?: boolean;
+  ideal_line_on?: boolean;
+  aid_stability?: number;
   has_assists_active?: boolean;
   active_assists_list?: string[];
 }

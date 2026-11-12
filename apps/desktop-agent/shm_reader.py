@@ -279,15 +279,34 @@ class TelemetrySample:
     max_fuel: float = 120.0
     tyres_out: int = 0
     is_off_track: bool = False
+    
+    # --- CONFIGURACIÓN DE REALISMO EN ACC (Física de Simulación) ---
+    realism_fuel_on: bool = True
+    realism_tire_on: bool = True
+    realism_damage_pct: int = 100
+    realism_penalties_on: bool = True
+    realism_summary: str = "CONSUMO ON · DESGASTE ON · DAÑO 100%"
     aid_fuel_rate: float = 1.0
     aid_tire_rate: float = 1.0
     aid_mechanical_damage: float = 1.0
-    aid_stability: float = 0.0
+    penalties_enabled: bool = True
+
+    # --- CONFIGURACIÓN DE AYUDAS DE CONDUCCIÓN EN ACC (Asistencias de Pilotaje) ---
+    has_driving_assists: bool = False
+    driving_assists_list: List[str] = field(default_factory=list)
+    driving_assists_summary: str = "SIN AYUDAS (MANUAL PURO)"
+    assist_auto_gearbox: bool = False
+    assist_auto_clutch: bool = False
+    assist_ideal_line: bool = False
+    assist_stability_pct: int = 0
+    assist_auto_blip: bool = False
+    auto_shifter_on: bool = False
     aid_auto_clutch: bool = False
     aid_auto_blip: bool = False
     ideal_line_on: bool = False
-    auto_shifter_on: bool = False
-    penalties_enabled: bool = True
+    aid_stability: float = 0.0
+
+    # Compatibilidad retroactiva
     has_assists_active: bool = False
     active_assists_list: List[str] = field(default_factory=list)
 
@@ -347,15 +366,30 @@ class TelemetrySample:
             "max_fuel": round(self.max_fuel, 1),
             "tyres_out": self.tyres_out,
             "is_off_track": self.is_off_track,
+            # Realismo
+            "realism_fuel_on": self.realism_fuel_on,
+            "realism_tire_on": self.realism_tire_on,
+            "realism_damage_pct": self.realism_damage_pct,
+            "realism_penalties_on": self.realism_penalties_on,
+            "realism_summary": self.realism_summary,
             "aid_fuel_rate": round(self.aid_fuel_rate, 2),
             "aid_tire_rate": round(self.aid_tire_rate, 2),
             "aid_mechanical_damage": round(self.aid_mechanical_damage, 2),
-            "aid_stability": round(self.aid_stability, 2),
+            "penalties_enabled": self.penalties_enabled,
+            # Ayudas de conducción
+            "has_driving_assists": self.has_driving_assists,
+            "driving_assists_list": self.driving_assists_list,
+            "driving_assists_summary": self.driving_assists_summary,
+            "assist_auto_gearbox": self.assist_auto_gearbox,
+            "assist_auto_clutch": self.assist_auto_clutch,
+            "assist_ideal_line": self.assist_ideal_line,
+            "assist_stability_pct": self.assist_stability_pct,
+            "assist_auto_blip": self.assist_auto_blip,
+            "auto_shifter_on": self.auto_shifter_on,
             "aid_auto_clutch": self.aid_auto_clutch,
             "aid_auto_blip": self.aid_auto_blip,
             "ideal_line_on": self.ideal_line_on,
-            "auto_shifter_on": self.auto_shifter_on,
-            "penalties_enabled": self.penalties_enabled,
+            "aid_stability": round(self.aid_stability, 2),
             "has_assists_active": self.has_assists_active,
             "active_assists_list": self.active_assists_list,
         }
@@ -446,39 +480,67 @@ class ACCSharedMemoryReader:
             if is_in_pit_now and float(phys.speedKmh) < 1.0 and comp_laps == 0:
                 self._tyre_wear_mm = [3.0, 3.0, 3.0, 3.0]
 
-            # Detección exhaustiva de asistencias y ayudas de simulación en ACC
+            # 1. Configuración de REALISMO en ACC (Física de Simulación)
+            # Menú UN JUGADOR / REALISMO:
+            # aidFuelRate: 1.0 = Activado, 0.0 = Desactivado (Tanque infinito)
+            # aidTireRate: 1.0 = Activado, 0.0 = Desactivado (Gomas infinitas)
+            # aidMechanicalDamage: 1.0 = 100%, 0.5 = 50%, 0.0 = 0%
+            # penaltiesEnabled: True = Activado, False = Inhabilitado
             aid_fuel = float(stc.aidFuelRate) if stc else 1.0
             aid_tire = float(stc.aidTireRate) if stc else 1.0
             aid_damage = float(stc.aidMechanicalDamage) if stc else 1.0
-            aid_stab = float(stc.aidStability) if stc else 0.0
-            aid_clutch = bool(stc.aidAutoClutch) if stc else False
-            aid_blip = bool(stc.aidAutoBlip) if stc else False
             penalties_on = bool(stc.penaltiesEnabled) if stc else True
-            ideal_line = bool(gfx.idealLineOn) if gfx else False
+
+            realism_fuel_on = aid_fuel > 0.05
+            realism_tire_on = aid_tire > 0.05
+            realism_damage_pct = int(round(aid_damage * 100))
+            realism_penalties_on = penalties_on
+
+            realism_parts = []
+            realism_parts.append("CONSUMO ON" if realism_fuel_on else "CONSUMO OFF")
+            realism_parts.append("GOMAS ON" if realism_tire_on else "GOMAS OFF")
+            realism_parts.append(f"DAÑO {realism_damage_pct}%")
+            realism_parts.append("SANCIONES ON" if realism_penalties_on else "SANCIONES OFF")
+            realism_summary = " · ".join(realism_parts)
+
+            # 2. Configuración de AYUDAS DE CONDUCCIÓN en ACC (Asistencias al Piloto)
+            # Menú UN JUGADOR / AYUDAS:
+            # Caja de cambios: automático / manual (phys.autoShifterOn)
+            # Embrague: automático / manual (stc.aidAutoClutch)
+            # Trazada ideal: visible / oculto (gfx.idealLineOn)
+            # Control de estabilidad: no / % arcade (stc.aidStability)
+            # Punta-tacón: automático / manual (stc.aidAutoBlip)
             auto_shift = bool(phys.autoShifterOn)
+            aid_clutch = bool(stc.aidAutoClutch) if stc else False
+            ideal_line = bool(gfx.idealLineOn) if gfx else False
+            aid_stab = float(stc.aidStability) if stc else 0.0
+            aid_blip = bool(stc.aidAutoBlip) if stc else False
 
-            assists_list: List[str] = []
-            if aid_fuel <= 0.05:
-                assists_list.append("consumo de combustible en no")
-            if aid_tire <= 0.05:
-                assists_list.append("desgaste de neumáticos en no")
-            if aid_damage <= 0.05:
-                assists_list.append("daño de auto en no")
-            if aid_stab > 0.05:
-                assists_list.append(f"control de estabilidad al {int(round(aid_stab * 100))}%")
-            if ideal_line:
-                assists_list.append("guía de trazada ideal")
+            driving_assists_list: List[str] = []
             if auto_shift:
-                assists_list.append("cambio automático")
+                driving_assists_list.append("Caja automática")
             if aid_clutch:
-                assists_list.append("embrague automático")
+                driving_assists_list.append("Embrague automático")
+            if ideal_line:
+                driving_assists_list.append("Trazada ideal visible")
+            if aid_stab > 0.05:
+                driving_assists_list.append(f"Control estabilidad {int(round(aid_stab * 100))}%")
             if aid_blip:
-                assists_list.append("punta-tacón automático")
+                driving_assists_list.append("Punta-tacón automático")
 
-            has_assists = len(assists_list) > 0
+            has_driving_assists = len(driving_assists_list) > 0
+            driving_assists_summary = (
+                " · ".join(driving_assists_list)
+                if driving_assists_list
+                else "SIN AYUDAS (MANUAL PURO)"
+            )
 
-            # Si el usuario tiene el desgaste de neumáticos en NO (aid_tire <= 0.05),
-            # congelamos el desgaste al 100% de vida (3.0 mm) respetando la ayuda de ACC
+            # Retrocompatibilidad
+            has_assists = has_driving_assists
+            assists_list = list(driving_assists_list)
+
+            # Si en REALISMO el usuario tiene el desgaste de neumáticos desactivado (aid_tire <= 0.05),
+            # congelamos el desgaste al 100% de vida (3.0 mm)
             if aid_tire <= 0.05:
                 self._tyre_wear_mm = [3.0, 3.0, 3.0, 3.0]
                 wear_mm = [3.0, 3.0, 3.0, 3.0]
@@ -636,15 +698,30 @@ class ACCSharedMemoryReader:
                 max_fuel=float(stc.maxFuel) if (stc and stc.maxFuel > 10.0) else 120.0,
                 tyres_out=tyres_out,
                 is_off_track=is_off_track,
+                # Realismo
+                realism_fuel_on=realism_fuel_on,
+                realism_tire_on=realism_tire_on,
+                realism_damage_pct=realism_damage_pct,
+                realism_penalties_on=realism_penalties_on,
+                realism_summary=realism_summary,
                 aid_fuel_rate=aid_fuel,
                 aid_tire_rate=aid_tire,
                 aid_mechanical_damage=aid_damage,
-                aid_stability=aid_stab,
+                penalties_enabled=penalties_on,
+                # Ayudas de conducción
+                has_driving_assists=has_driving_assists,
+                driving_assists_list=driving_assists_list,
+                driving_assists_summary=driving_assists_summary,
+                assist_auto_gearbox=auto_shift,
+                assist_auto_clutch=aid_clutch,
+                assist_ideal_line=ideal_line,
+                assist_stability_pct=int(round(aid_stab * 100)),
+                assist_auto_blip=aid_blip,
+                auto_shifter_on=auto_shift,
                 aid_auto_clutch=aid_clutch,
                 aid_auto_blip=aid_blip,
                 ideal_line_on=ideal_line,
-                auto_shifter_on=auto_shift,
-                penalties_enabled=penalties_on,
+                aid_stability=aid_stab,
                 has_assists_active=has_assists,
                 active_assists_list=assists_list,
             )
