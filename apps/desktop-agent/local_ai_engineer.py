@@ -82,6 +82,13 @@ class LocalAIEngineer:
         self._last_off_track_alert_ts: float = 0.0
         self._off_track_start_ts: float = 0.0
 
+        # Monitoreo de boxes y garaje (Entrada, cajón, retorno al garaje y salida a pista)
+        self._is_in_pit_lane: bool = False
+        self._is_in_garage: bool = False
+        self._last_pit_entry_ts: float = 0.0
+        self._last_garage_ts: float = 0.0
+        self._last_pit_exit_ts: float = 0.0
+
         # Monitoreo de coaching preventivo dinámico en carrera
         self._preventative_coaching_ts: float = 0.0
         self._recent_tips: List[str] = []
@@ -130,6 +137,9 @@ class LocalAIEngineer:
         self._ensure_track(sample.track_name)
         now = time.time()
 
+        # Detección inmediata de boxes y garaje (Entrada, cajón, "Volver al garaje" y salida a pista)
+        self._check_pit_and_garage_events(sample, now)
+
         # Detección inmediata a 333 Hz de salidas de pista y límites superados
         self._check_off_track_events(sample, now)
 
@@ -141,7 +151,7 @@ class LocalAIEngineer:
             self._broadcast_radio(greeting, "praise")
             self.last_speech_ts = now + 2.5
 
-        if sample.speed_kmh < 15.0 or sample.is_in_pit or sample.is_in_pit_lane:
+        if sample.speed_kmh < 15.0 or sample.is_in_pit or sample.is_in_pit_lane or self._is_in_garage:
             self.upcoming_corner_data = None
             self.active_corner = None
             return self.get_state()
@@ -585,16 +595,67 @@ class LocalAIEngineer:
             self._broadcast_radio(msg, "car_state")
             return
 
+    def _check_pit_and_garage_events(self, sample: TelemetrySample, now: float) -> None:
+        """
+        Monitorea y comunica por radio en tiempo real:
+        1. Entrada al Pit Lane (Boxes).
+        2. Llegada al cajón de boxes o retorno al garaje (por 'Volver al garaje' / Esc o parada).
+        3. Salida de boxes de vuelta a pista abierta.
+        """
+        in_pit_lane = getattr(sample, "is_in_pit_lane", False) or getattr(sample, "pit_limiter_on", False)
+        in_garage = (
+            getattr(sample, "is_in_garage", False)
+            or getattr(sample, "is_setup_menu_visible", False)
+            or (getattr(sample, "is_in_pit", False) and sample.speed_kmh < 3.0)
+        )
+
+        # 1. DETECCIÓN DE RETORNO AL GARAJE ("Volver a boxes", Esc o coche detenido en cajón)
+        if in_garage:
+            if not self._is_in_garage:
+                self._is_in_garage = True
+                self._is_in_pit_lane = True
+                self._is_currently_off_track = False
+                if (now - self._last_garage_ts) > 12.0:
+                    self._last_garage_ts = now
+                    self.last_speech_ts = now
+                    msg = "Coche en el garaje. Telemetría lista en boxes para revisar setup y ajustar la carga de combustible."
+                    self._broadcast_radio(msg, "strategy", priority=True)
+            return
+
+        # 2. DETECCIÓN DE ENTRADA A BOXES (Pit Lane)
+        if in_pit_lane:
+            if not self._is_in_pit_lane and not self._is_in_garage:
+                self._is_in_pit_lane = True
+                self._is_currently_off_track = False
+                if (now - self._last_pit_entry_ts) > 20.0:
+                    self._last_pit_entry_ts = now
+                    self.last_speech_ts = now
+                    msg = "Entrando al pit lane. Recuerda mantener activo el limitador a cincuenta kilómetros por hora y prepara la parada."
+                    self._broadcast_radio(msg, "alert", priority=True)
+            return
+
+        # 3. DETECCIÓN DE SALIDA DE BOXES A PISTA ABIERTA
+        if not in_pit_lane and not in_garage:
+            if self._is_in_pit_lane or self._is_in_garage:
+                self._is_in_pit_lane = False
+                self._is_in_garage = False
+                # Solo anunciar salida si el coche ya tiene velocidad en pista (> 25 km/h)
+                if sample.speed_kmh > 25.0 and (now - self._last_pit_exit_ts) > 20.0:
+                    self._last_pit_exit_ts = now
+                    self.last_speech_ts = now
+                    msg = "Saliendo a pista. Neumáticos fríos, calienta bien en los primeros sectores y busca el ritmo."
+                    self._broadcast_radio(msg, "coaching", priority=True)
+
     def _check_off_track_events(self, sample: TelemetrySample, now: float) -> None:
         """
         Detecta en tiempo real cuando el piloto excede los límites del trazado o se sale de la pista.
         - tyres_out >= 4 o ruedas en grava/hierba: ¡Salida de pista completa!
         - tyres_out == 3: ¡Tres ruedas fuera del trazado!
-        - tyres_out == 2: ¡Cuidado con los límites de pista! Dos ruedas fuera.
+        - tyres_out == 2 o sanción de recorte: ¡Cuidado con los límites de pista!
         - Al reincorporarse: ¡De vuelta en el asfalto!
         Emite aviso prioritario para interrumpir mensajes secundarios y alertar al piloto de inmediato.
         """
-        if sample.is_in_pit or sample.is_in_pit_lane:
+        if sample.is_in_pit or sample.is_in_pit_lane or getattr(sample, "is_in_garage", False) or getattr(sample, "is_setup_menu_visible", False):
             self._is_currently_off_track = False
             return
 
@@ -605,8 +666,11 @@ class LocalAIEngineer:
 
         tyres_out = getattr(sample, "tyres_out", 0)
         dirty = getattr(sample, "tyre_dirty_level", [0.0, 0.0, 0.0, 0.0])
-        is_in_dirt = any(x > 0.04 for x in dirty)
-        is_off = (tyres_out >= 2) or is_in_dirt or getattr(sample, "is_off_track", False)
+        is_in_dirt = any(x > 0.005 for x in dirty)
+        penalty = getattr(sample, "penalty", 0)
+        penalty_time = getattr(sample, "penalty_time", 0.0)
+        has_penalty = (penalty > 0 or penalty_time > 0.0)
+        is_off = (tyres_out >= 2) or is_in_dirt or has_penalty or getattr(sample, "is_off_track", False)
 
         if is_off:
             if not self._is_currently_off_track:
@@ -629,10 +693,10 @@ class LocalAIEngineer:
                             "¡Tres ruedas fuera del trazado! Has superado los límites de pista.",
                             "¡Atención, tres ruedas fuera! Cuidado con la sanción de límites de pista.",
                         ]
-                    else:  # tyres_out == 2
+                    else:  # tyres_out == 2 o has_penalty
                         phrases = [
                             "¡Cuidado con los límites de pista! Dos ruedas fuera del asfalto.",
-                            "Atención: dos ruedas fuera de la línea blanca. Ajusta la trazada para no invalidar.",
+                            "Atención: límites de pista superados. Ajusta la trazada para no invalidar.",
                         ]
 
                     idx = int(now) % len(phrases)

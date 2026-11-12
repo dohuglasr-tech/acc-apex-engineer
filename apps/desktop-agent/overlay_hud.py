@@ -846,15 +846,24 @@ class OverlayHUD:
 
         t_out = getattr(sample, "tyres_out", 0)
         is_dirt = getattr(sample, "is_in_dirt", False)
-        is_off = getattr(sample, "is_off_track", False) or (t_out >= 2) or is_dirt
+        penalty = getattr(sample, "penalty", 0)
+        penalty_time = getattr(sample, "penalty_time", 0.0)
+        has_penalty = (penalty > 0 or penalty_time > 0.0)
+        is_in_garage = getattr(sample, "is_in_garage", False) or getattr(sample, "is_setup_menu_visible", False) or (getattr(sample, "is_in_pit", False) and sample.speed_kmh < 3.0)
+        is_in_pit_lane = getattr(sample, "is_in_pit_lane", False) or getattr(sample, "pit_limiter_on", False)
+        is_off = (getattr(sample, "is_off_track", False) or (t_out >= 2) or is_dirt or has_penalty) and not is_in_pit_lane and not is_in_garage
 
-        if is_off:
+        if is_in_garage:
+            self.lbl_setup.configure(text=f"BOXES: EN GARAJE · {self.last_setup_label}", fg="#38BDF8")
+        elif is_in_pit_lane:
+            self.lbl_setup.configure(text="BOXES: PIT LANE (LIMITADOR 50 KM/H)", fg="#F59E0B")
+        elif is_off:
             if t_out >= 4 or is_dirt:
                 self.lbl_setup.configure(text="¡SALIDA DE PISTA TOTAL! (HIERBA/GRAVA)", fg="#E10600")
             elif t_out == 3:
                 self.lbl_setup.configure(text="¡FUERA DEL TRAZADO! (3 RUEDAS FUERA)", fg="#E10600")
             else:
-                self.lbl_setup.configure(text="¡LÍMITES DE PISTA EXCEDIDOS! (2 RUEDAS)", fg="#F59E0B")
+                self.lbl_setup.configure(text="¡LÍMITES DE PISTA EXCEDIDOS!", fg="#F59E0B")
         elif live_alert:
             self.lbl_setup.configure(text=f"AVISO: {live_alert}", fg="#E10600")
         elif has_driving_assists:

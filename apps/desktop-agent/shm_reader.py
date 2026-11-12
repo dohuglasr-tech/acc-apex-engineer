@@ -187,6 +187,17 @@ class SPageFileGraphic(ctypes.Structure):
         ("penalty", c_int32),
         ("idealLineOn", c_int32),
         ("isInPitLane", c_int32),
+        ("surfaceGrip", c_float),
+        ("mandatoryPitDone", c_int32),
+        ("windSpeed", c_float),
+        ("windDirection", c_float),
+        ("isSetupMenuVisible", c_int32),
+        ("mainDisplayIndex", c_int32),
+        ("secondaryDisplayIndex", c_int32),
+        ("tc", c_int32),
+        ("tcCut", c_int32),
+        ("engineMap", c_int32),
+        ("abs", c_int32),
     ]
 
 
@@ -281,6 +292,11 @@ class TelemetrySample:
     is_off_track: bool = False
     tyre_dirty_level: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
     is_in_dirt: bool = False
+    is_in_garage: bool = False
+    pit_limiter_on: bool = False
+    is_setup_menu_visible: bool = False
+    penalty: int = 0
+    penalty_time: float = 0.0
     
     # --- CONFIGURACIÓN DE REALISMO EN ACC (Física de Simulación) ---
     realism_fuel_on: bool = True
@@ -370,6 +386,11 @@ class TelemetrySample:
             "is_off_track": self.is_off_track,
             "tyre_dirty_level": [round(x, 2) for x in self.tyre_dirty_level],
             "is_in_dirt": self.is_in_dirt,
+            "is_in_garage": self.is_in_garage,
+            "pit_limiter_on": self.pit_limiter_on,
+            "is_setup_menu_visible": self.is_setup_menu_visible,
+            "penalty": self.penalty,
+            "penalty_time": round(self.penalty_time, 2),
             # Realismo
             "realism_fuel_on": self.realism_fuel_on,
             "realism_tire_on": self.realism_tire_on,
@@ -628,10 +649,25 @@ class ACCSharedMemoryReader:
 
             # Detección física precisa de límites de pista y ruedas fuera del trazado
             dirty_levels = [float(phys.tyreDirtyLevel[i]) for i in range(4)]
-            is_in_dirt = any(x > 0.04 for x in dirty_levels)
+            is_in_dirt = any(x > 0.005 for x in dirty_levels)
+            raw_penalty = int(gfx.penalty) if gfx else 0
+            raw_penalty_time = float(gfx.penaltyTime) if gfx else 0.0
+            has_penalty = (raw_penalty > 0 or raw_penalty_time > 0.0)
             tyres_out = max(0, min(4, int(phys.numberOfTyresOut)))
-            # 2 ruedas fuera = superación de límites de pista; >= 3 o grava/hierba = fuera del asfalto
-            is_off_track = (tyres_out >= 2) or is_in_dirt
+            # 2 ruedas fuera = superación de límites de pista; grava/hierba = fuera del asfalto; penalty = recorte de curva
+            is_off_track = (tyres_out >= 2) or is_in_dirt or has_penalty
+
+            # Detección ultra-robusta de Pit Lane, Cajón de boxes y Garaje (Teletransporte Esc)
+            pit_limiter_active = bool(phys.pitLimiterOn)
+            is_setup_menu = bool(getattr(gfx, "isSetupMenuVisible", 0)) if gfx else False
+            raw_in_pit_box = bool(gfx.isInPit) if gfx else False
+            raw_in_pit_lane = bool(gfx.isInPitLane) if gfx else False
+            
+            # El limitador activo, o isInPitLane, o estar en el box confirman presencia en Pit Lane
+            is_in_pit_lane = raw_in_pit_lane or pit_limiter_active or raw_in_pit_box
+            is_in_pit = raw_in_pit_box or is_setup_menu
+            # Detección de Garaje: menú de setup visible, o en cajón a baja velocidad (< 3 km/h), o pit lane a 0 km/h tras teletransporte
+            is_in_garage = is_setup_menu or (raw_in_pit_box and float(phys.speedKmh) < 3.0) or (is_in_pit_lane and float(phys.speedKmh) < 1.0)
 
             # Filtrado estricto de tiempos de vuelta válidos de ACC
             # Kunos ACC inicializa iBestTime e iLastTime en 2147483647 (INT32_MAX) cuando no hay vueltas
@@ -660,8 +696,8 @@ class ACCSharedMemoryReader:
                 normalized_pos=max(
                     0.0, min(1.0, float(gfx.normalizedCarPosition) if gfx else 0.0)
                 ),
-                is_in_pit=bool(gfx.isInPit) if gfx else False,
-                is_in_pit_lane=bool(gfx.isInPitLane) if gfx else False,
+                is_in_pit=is_in_pit,
+                is_in_pit_lane=is_in_pit_lane,
                 speed_kmh=max(0.0, float(phys.speedKmh)),
                 rpms=max(0, int(phys.rpms)),
                 max_rpm=max(
@@ -706,6 +742,11 @@ class ACCSharedMemoryReader:
                 is_off_track=is_off_track,
                 tyre_dirty_level=dirty_levels,
                 is_in_dirt=is_in_dirt,
+                is_in_garage=is_in_garage,
+                pit_limiter_on=pit_limiter_active,
+                is_setup_menu_visible=is_setup_menu,
+                penalty=raw_penalty,
+                penalty_time=raw_penalty_time,
                 # Realismo
                 realism_fuel_on=realism_fuel_on,
                 realism_tire_on=realism_tire_on,

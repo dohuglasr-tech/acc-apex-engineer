@@ -187,6 +187,9 @@ class VoiceEngineer:
     def _preload_critical_phrases(self) -> None:
         """Pre-sintetiza alertas críticas en segundo plano para garantizar reproducción con cero latencia."""
         critical_alerts = [
+            "Entrando al pit lane. Recuerda mantener activo el limitador a cincuenta kilómetros por hora y prepara la parada.",
+            "Coche en el garaje. Telemetría lista en boxes para revisar setup y ajustar la carga de combustible.",
+            "Saliendo a pista. Neumáticos fríos, calienta bien en los primeros sectores y busca el ritmo.",
             "¡Salida de pista completa! Cuidado con la grava y la hierba, mantén el volante recto y reincorpora con precaución.",
             "¡Coche fuera de pista! Cuidado al volver al asfalto para no trompear.",
             "¡Te has salido del trazado! Calma con el acelerador, mantén la dirección firme y busca el asfalto.",
@@ -194,6 +197,7 @@ class VoiceEngineer:
             "¡Atención, tres ruedas fuera! Cuidado con la sanción de límites de pista.",
             "¡Cuidado con los límites de pista! Dos ruedas fuera del asfalto.",
             "Atención: dos ruedas fuera de la línea blanca. Ajusta la trazada para no invalidar.",
+            "Atención: límites de pista superados. Ajusta la trazada para no invalidar.",
             "Seguimos fuera de pista. Tracciona suave en primera o marcha atrás para salir de la grava.",
             "De vuelta en el asfalto. Tracción limpia y concéntrate en la siguiente curva.",
             "Asfalto limpio. Recupera el ritmo y a por el siguiente sector.",

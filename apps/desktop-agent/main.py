@@ -537,8 +537,7 @@ class ApexDesktopAgentApp:
         if getattr(sample, "realism_fuel_on", True) is False or getattr(sample, "aid_fuel_rate", 1.0) <= 0.05:
             self.hud.set_setup_status("BOXES: REALISMO -> COMBUSTIBLE ILIMITADO")
             msg = "Coche en garaje. En el menú de realismo tienes el consumo desactivado (tanque infinito). Carga el combustible libremente y sal a pista a buscar tu vuelta rápida perfecta."
-            self.voice.speak(msg)
-            self.ai_engineer._broadcast_radio(msg, "strategy")
+            self.ai_engineer._broadcast_radio(msg, "strategy", priority=True)
             return
 
         self.hud.set_setup_status(
@@ -557,14 +556,13 @@ class ApexDesktopAgentApp:
             }
 
             def _on_gemini_fuel(g_text: str, g_cat: str) -> None:
-                self.ai_engineer._broadcast_radio(g_text, g_cat)
+                self.ai_engineer._broadcast_radio(g_text, g_cat, priority=True)
 
             self.gemini.generate_radio_advice_async(
                 "pit_fuel_strategy", ctx, _on_gemini_fuel
             )
         else:
-            self.voice.announce_pit_fuel(strat.speech_text)
-            self.ai_engineer._broadcast_radio(strat.speech_text, "strategy")
+            self.ai_engineer._broadcast_radio(strat.speech_text, "strategy", priority=True)
 
     def _refresh_hud_loop(self) -> None:
         sample = self.latest_sample
