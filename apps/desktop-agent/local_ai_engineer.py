@@ -81,6 +81,8 @@ class LocalAIEngineer:
         self._is_currently_off_track: bool = False
         self._last_off_track_alert_ts: float = 0.0
         self._off_track_start_ts: float = 0.0
+        self._last_is_valid_lap: bool = True
+        self._last_lap_number_for_validity: int = -1
 
         # Monitoreo de boxes y garaje (Entrada, cajón, retorno al garaje y salida a pista)
         self._is_in_pit_lane: bool = False
@@ -222,15 +224,30 @@ class LocalAIEngineer:
                 dist_round = int(min_dist_m)
                 marker = best_corner.braking_marker
                 gear = best_corner.gear
+                b_type = getattr(best_corner, "braking_type", "hard")
 
-                if lap_idx <= 1:
-                    advice = f"En la siguiente curva, {best_corner.name}, frena en {marker} y baja a {gear}ª."
-                elif lap_idx % 3 == 0:
-                    advice = f"En la siguiente curva, {best_corner.name}, a {dist_round} metros. Apura la frenada en {marker} y busca el vértice en marcha {gear}."
-                elif lap_idx % 2 == 0:
-                    advice = f"En la siguiente curva, {best_corner.name}, referencia en {marker}, baja a {gear}ª."
+                if b_type == "flat":
+                    # Curva rápida a fondo (ej: Curva Grande, Blanchimont, Eau Rouge) -> Jamás decir "frena"
+                    advice = (
+                        f"En la siguiente curva, {best_corner.name}, se hace a fondo en {gear}ª. "
+                        f"{best_corner.anticipation_advice or 'Mantén la dirección firme sin tocar el freno.'}"
+                    )
+                elif b_type == "lift":
+                    # Toque suave de freno o levantada leve de acelerador
+                    advice = (
+                        f"En la siguiente curva, {best_corner.name}, solo levantada leve de gas o toque suave de freno en {gear}ª. "
+                        f"Mantén la velocidad de paso."
+                    )
                 else:
-                    advice = f"En la siguiente curva, {best_corner.name}, cartel de {marker}. Modula el freno progresivo y asegura la tracción en salida."
+                    # Zona de frenada con carteles de metros ("hard", "trail")
+                    if lap_idx <= 1:
+                        advice = f"En la siguiente curva, {best_corner.name}, frena en {marker} y baja a {gear}ª."
+                    elif lap_idx % 3 == 0:
+                        advice = f"En la siguiente curva, {best_corner.name}, a {dist_round} metros. Referencia en {marker} y busca el vértice en marcha {gear}."
+                    elif lap_idx % 2 == 0:
+                        advice = f"En la siguiente curva, {best_corner.name}, referencia en {marker}, baja a {gear}ª."
+                    else:
+                        advice = f"En la siguiente curva, {best_corner.name}, cartel de {marker}. Frena firme y asegura la tracción en salida."
 
                 self._broadcast_radio(advice, "anticipation")
 
@@ -649,20 +666,43 @@ class LocalAIEngineer:
     def _check_off_track_events(self, sample: TelemetrySample, now: float) -> None:
         """
         Detecta en tiempo real cuando el piloto excede los límites del trazado o se sale de la pista.
+        - isValidLap pasa de True a False: ¡Límites de pista superados o recorte con vuelta invalidada!
         - tyres_out >= 4 o ruedas en grava/hierba: ¡Salida de pista completa!
-        - tyres_out == 3: ¡Tres ruedas fuera del trazado!
-        - tyres_out == 2 o sanción de recorte: ¡Cuidado con los límites de pista!
+        - Trompo detectado por yaw_rate > 0.70: ¡Trompo y pérdida de control!
         - Al reincorporarse: ¡De vuelta en el asfalto!
         Emite aviso prioritario para interrumpir mensajes secundarios y alertar al piloto de inmediato.
         """
+        # Detección automática de periférico: si gira más de 50 grados a velocidad, es un volante
+        if abs(sample.steer_angle) > 50.0 and sample.speed_kmh > 15.0:
+            if self.input_mode != "wheel":
+                self.input_mode = "wheel"
+
         if sample.is_in_pit or sample.is_in_pit_lane or getattr(sample, "is_in_garage", False) or getattr(sample, "is_setup_menu_visible", False):
             self._is_currently_off_track = False
+            self._last_is_valid_lap = True
             return
+
+        # Reseteo de validez al cruzar a una nueva vuelta
+        if sample.completed_laps != self._last_lap_number_for_validity:
+            self._last_lap_number_for_validity = sample.completed_laps
+            self._last_is_valid_lap = True
+            self._is_currently_off_track = False
 
         # Umbral mínimo: solo ignorar si el coche está totalmente detenido al arrancar en el garaje
         if sample.speed_kmh < 4.0 and sample.completed_laps == 0:
             self._is_currently_off_track = False
             return
+
+        # Detección de pérdida de validez de vuelta (ACC invalida isValidLap en cuanto 2 o 4 ruedas cortan límites o tocan grava)
+        is_newly_invalidated = False
+        if (
+            self._last_is_valid_lap
+            and not getattr(sample, "is_valid_lap", True)
+            and sample.current_lap_ms > 2000
+            and sample.speed_kmh > 20.0
+        ):
+            self._last_is_valid_lap = False
+            is_newly_invalidated = True
 
         tyres_out = getattr(sample, "tyres_out", 0)
         dirty = getattr(sample, "tyre_dirty_level", [0.0, 0.0, 0.0, 0.0])
@@ -670,10 +710,12 @@ class LocalAIEngineer:
         penalty = getattr(sample, "penalty", 0)
         penalty_time = getattr(sample, "penalty_time", 0.0)
         has_penalty = (penalty > 0 or penalty_time > 0.0)
-        is_off = (tyres_out >= 2) or is_in_dirt or has_penalty or getattr(sample, "is_off_track", False)
+        is_spinning = (abs(getattr(sample, "yaw_rate", 0.0)) > 0.70)
+        
+        is_off = is_newly_invalidated or (tyres_out >= 2) or is_in_dirt or has_penalty or getattr(sample, "is_off_track", False)
 
         if is_off:
-            if not self._is_currently_off_track:
+            if not self._is_currently_off_track or is_newly_invalidated:
                 self._is_currently_off_track = True
                 self._off_track_start_ts = now
 
@@ -682,7 +724,17 @@ class LocalAIEngineer:
                     self._last_off_track_alert_ts = now
                     self.last_speech_ts = now
 
-                    if tyres_out >= 4 or is_in_dirt:
+                    if is_spinning:
+                        phrases = [
+                            "¡Trompo y salida de pista! Mantén el freno pisado para detener la inercia y vuelve con cuidado sin bloquear el asfalto.",
+                            "¡Pérdida de control! Cuidado con el tráfico al reincorporarte al trazado.",
+                        ]
+                    elif is_newly_invalidated or (tyres_out == 2 and not is_in_dirt):
+                        phrases = [
+                            "¡Salida de pista! Has superado los límites del trazado en esta curva y la vuelta ha quedado invalidada. Ajusta la trazada para la siguiente.",
+                            "¡Atención, límites de pista superados! Ruedas fuera de la línea blanca, vuelta anulada. Concéntrate en el siguiente sector.",
+                        ]
+                    elif tyres_out >= 4 or is_in_dirt:
                         phrases = [
                             "¡Salida de pista completa! Cuidado con la grava y la hierba, mantén el volante recto y reincorpora con precaución.",
                             "¡Coche fuera de pista! Cuidado al volver al asfalto para no trompear.",
@@ -693,7 +745,7 @@ class LocalAIEngineer:
                             "¡Tres ruedas fuera del trazado! Has superado los límites de pista.",
                             "¡Atención, tres ruedas fuera! Cuidado con la sanción de límites de pista.",
                         ]
-                    else:  # tyres_out == 2 o has_penalty
+                    else:
                         phrases = [
                             "¡Cuidado con los límites de pista! Dos ruedas fuera del asfalto.",
                             "Atención: límites de pista superados. Ajusta la trazada para no invalidar.",

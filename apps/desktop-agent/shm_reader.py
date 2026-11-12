@@ -198,6 +198,24 @@ class SPageFileGraphic(ctypes.Structure):
         ("tcCut", c_int32),
         ("engineMap", c_int32),
         ("abs", c_int32),
+        ("fuelXLap", c_float),
+        ("rainLights", c_int32),
+        ("flashingLights", c_int32),
+        ("lightStage", c_int32),
+        ("exhaustTemperature", c_float),
+        ("wiperLevel", c_int32),
+        ("driverStintTotalTimeLeft", c_int32),
+        ("driverStintTimeLeft", c_int32),
+        ("rainTyres", c_int32),
+        ("sessionIndex", c_int32),
+        ("usedFuel", c_float),
+        ("deltaLapTime", c_wchar * 15),
+        ("iDeltaLapTime", c_int32),
+        ("estimatedLapTime", c_wchar * 15),
+        ("iEstimatedLapTime", c_int32),
+        ("isDeltaPositive", c_int32),
+        ("iSplit", c_int32),
+        ("isValidLap", c_int32),
     ]
 
 
@@ -297,6 +315,7 @@ class TelemetrySample:
     is_setup_menu_visible: bool = False
     penalty: int = 0
     penalty_time: float = 0.0
+    is_valid_lap: bool = True
     
     # --- CONFIGURACIÓN DE REALISMO EN ACC (Física de Simulación) ---
     realism_fuel_on: bool = True
@@ -391,6 +410,7 @@ class TelemetrySample:
             "is_setup_menu_visible": self.is_setup_menu_visible,
             "penalty": self.penalty,
             "penalty_time": round(self.penalty_time, 2),
+            "is_valid_lap": self.is_valid_lap,
             # Realismo
             "realism_fuel_on": self.realism_fuel_on,
             "realism_tire_on": self.realism_tire_on,
@@ -528,30 +548,26 @@ class ACCSharedMemoryReader:
             realism_parts.append("SANCIONES ON" if realism_penalties_on else "SANCIONES OFF")
             realism_summary = " · ".join(realism_parts)
 
-            # 2. Configuración de AYUDAS DE CONDUCCIÓN en ACC (Asistencias al Piloto)
+            # 2. Configuración de AYUDAS DE CONDUCCIÓN en ACC (Asistencias Reales al Piloto)
             # Menú UN JUGADOR / AYUDAS:
-            # Caja de cambios: automático / manual (phys.autoShifterOn)
-            # Embrague: automático / manual (stc.aidAutoClutch)
-            # Trazada ideal: visible / oculto (gfx.idealLineOn)
-            # Control de estabilidad: no / % arcade (stc.aidStability)
-            # Punta-tacón: automático / manual (stc.aidAutoBlip)
+            # - Caja de cambios: automático / manual (phys.autoShifterOn)
+            # - Trazada ideal: visible / oculto (gfx.idealLineOn)
+            # - Control de estabilidad: no / % arcade (stc.aidStability)
+            # NOTA SIM RACING: En GT3 el embrague y auto-blip son nativos electrónicos del coche,
+            # no se consideran ayudas arcade de pilotaje.
             auto_shift = bool(phys.autoShifterOn)
-            aid_clutch = bool(stc.aidAutoClutch) if stc else False
             ideal_line = bool(gfx.idealLineOn) if gfx else False
             aid_stab = float(stc.aidStability) if stc else 0.0
+            aid_clutch = bool(stc.aidAutoClutch) if stc else False
             aid_blip = bool(stc.aidAutoBlip) if stc else False
 
             driving_assists_list: List[str] = []
             if auto_shift:
                 driving_assists_list.append("Caja automática")
-            if aid_clutch:
-                driving_assists_list.append("Embrague automático")
             if ideal_line:
-                driving_assists_list.append("Trazada ideal visible")
+                driving_assists_list.append("Trazada ideal en pista")
             if aid_stab > 0.05:
                 driving_assists_list.append(f"Control estabilidad {int(round(aid_stab * 100))}%")
-            if aid_blip:
-                driving_assists_list.append("Punta-tacón automático")
 
             has_driving_assists = len(driving_assists_list) > 0
             driving_assists_summary = (
@@ -654,8 +670,9 @@ class ACCSharedMemoryReader:
             raw_penalty_time = float(gfx.penaltyTime) if gfx else 0.0
             has_penalty = (raw_penalty > 0 or raw_penalty_time > 0.0)
             tyres_out = max(0, min(4, int(phys.numberOfTyresOut)))
-            # 2 ruedas fuera = superación de límites de pista; grava/hierba = fuera del asfalto; penalty = recorte de curva
-            is_off_track = (tyres_out >= 2) or is_in_dirt or has_penalty
+            raw_is_valid = bool(getattr(gfx, "isValidLap", 1) != 0) if gfx else True
+            # Salida de pista en ACC: vuelta invalidada por límites o recorte (isValidLap == 0), o grava/hierba, o penalty
+            is_off_track = (not raw_is_valid) or (tyres_out >= 2) or is_in_dirt or has_penalty
 
             # Detección ultra-robusta de Pit Lane, Cajón de boxes y Garaje (Teletransporte Esc)
             pit_limiter_active = bool(phys.pitLimiterOn)
@@ -747,6 +764,7 @@ class ACCSharedMemoryReader:
                 is_setup_menu_visible=is_setup_menu,
                 penalty=raw_penalty,
                 penalty_time=raw_penalty_time,
+                is_valid_lap=raw_is_valid,
                 # Realismo
                 realism_fuel_on=realism_fuel_on,
                 realism_tire_on=realism_tire_on,

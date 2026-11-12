@@ -356,6 +356,18 @@ class ApexDesktopAgentApp:
                 sample = self.shm_reader.read_sample()
                 self.latest_sample = sample
                 if sample is not None and sample.is_live_acc:
+                    # Detección y adaptación automática de periférico (Volante vs Gamepad)
+                    if abs(sample.steer_angle) > 50.0 and sample.speed_kmh > 15.0:
+                        if self.config.get("input_mode") != "wheel":
+                            self.config["input_mode"] = "wheel"
+                            self.analyzer.set_input_mode("wheel")
+                            self.injector.set_input_mode("wheel")
+                            self.ai_engineer.set_input_mode("wheel")
+                            self.hud.set_input_mode("wheel")
+                            token = self.config.get("token") or ""
+                            if token:
+                                self.cloud_sync.sync_input_mode_async(token, "wheel")
+
                     self.ai_engineer.process_sample(sample)
                     completed_lap = self.analyzer.process_sample(sample)
                     if completed_lap is not None:
