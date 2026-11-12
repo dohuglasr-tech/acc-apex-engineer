@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 try:
     import edge_tts
