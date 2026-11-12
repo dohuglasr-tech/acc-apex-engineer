@@ -588,7 +588,9 @@ class ApexDesktopAgentApp:
 
         avg_fuel = 0.0
         if sample is not None:
-            avg_fuel = self.fuel_calculator.get_avg_fuel(sample.car_model, sample.track_name)
+            avg_fuel = self.fuel_calculator.get_avg_fuel(
+                sample.car_model, sample.track_name, getattr(sample, "fuel_per_lap", 0.0)
+            )
 
         self.hud.update_telemetry(
             sample=sample,

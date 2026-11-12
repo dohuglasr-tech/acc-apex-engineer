@@ -157,9 +157,80 @@ export default function DashboardPage() {
   };
 
   // Estimación de combustible y autonomía
-  const fuelRemaining = frame?.fuel ?? 42.0;
-  const avgFuelPerLap = 3.35; // Litros estándar GT3
+  const fuelRemaining = frame?.fuel ?? 0;
+  const trackFuelMap: Record<string, number> = {
+    spa: 3.45,
+    monza: 2.95,
+    silverstone: 3.15,
+    nurburgring: 2.80,
+    brands_hatch: 2.10,
+    misano: 2.50,
+    paul_ricard: 3.10,
+    zandvoort: 2.45,
+    barcelona: 2.85,
+    hungaroring: 2.55,
+    kyalami: 2.90,
+    suzuka: 3.10,
+    mount_panorama: 3.35,
+    laguna_seca: 2.25,
+    imola: 2.75,
+    donington: 2.40,
+    oulton_park: 2.30,
+    snetterton: 2.40,
+    cota: 3.20,
+    indianapolis: 2.40,
+    watkins_glen: 2.65,
+    valencia: 2.35,
+    red_bull_ring: 2.30,
+  };
+  let trackBaseFuel = 3.05;
+  for (const [k, v] of Object.entries(trackFuelMap)) {
+    if (cleanTrack.includes(k)) {
+      trackBaseFuel = v;
+      break;
+    }
+  }
+  const avgFuelPerLap =
+    frame?.fuel_per_lap && frame.fuel_per_lap >= 0.8 && frame.fuel_per_lap <= 8.5
+      ? frame.fuel_per_lap
+      : trackBaseFuel;
   const lapsRemaining = fuelRemaining > 0 ? Math.floor(fuelRemaining / avgFuelPerLap) : 0;
+
+  // Cálculo de carga recomendada para la sesión (Boxes / Garaje)
+  const sessionType = frame?.session_type ?? 0;
+  let recommendedLaps = 8;
+  let recommendedSafetyL = 3.0;
+  let sessionLabel = "Entrenamientos (Stint 8 vtas)";
+
+  if (sessionType === 2) {
+    // Carrera
+    const refLapSec = personalBestMs > 45000 ? personalBestMs / 1000 : 106.0;
+    if (frame?.session_time_left && frame.session_time_left > 15) {
+      recommendedLaps = Math.ceil(frame.session_time_left / refLapSec) + 1;
+      const mins = Math.round(frame.session_time_left / 60);
+      sessionLabel = `Carrera (${mins} min · ${recommendedLaps} vtas)`;
+    } else if (frame?.session_laps && frame.session_laps > 0) {
+      recommendedLaps = Math.max(1, frame.session_laps - (frame.completed_laps || 0));
+      sessionLabel = `Carrera (${recommendedLaps} vtas restantes)`;
+    } else {
+      recommendedLaps = 13; // Sprint 20 min
+      sessionLabel = "Carrera (Sprint 20 min)";
+    }
+    recommendedSafetyL = Math.round(avgFuelPerLap * 1.5 * 10) / 10;
+  } else if (sessionType === 1) {
+    // Clasificación
+    recommendedLaps = 5;
+    recommendedSafetyL = 2.5;
+    sessionLabel = "Clasificación (Tanda 5 vtas)";
+  } else if (sessionType === 3) {
+    // Vuelta rápida
+    recommendedLaps = 3;
+    recommendedSafetyL = 2.0;
+    sessionLabel = "Vuelta Rápida (3 vtas)";
+  }
+
+  const recommendedTotalFuelL = Math.ceil(recommendedLaps * avgFuelPerLap + recommendedSafetyL);
+  const fuelDiff = recommendedTotalFuelL - Math.round(fuelRemaining);
   const isOffTrack = frame?.is_off_track || (frame?.tyres_out ?? 0) >= 2 || (frame?.is_in_dirt ?? false);
 
   // Realismo de simulación (ACC Física)
@@ -643,14 +714,18 @@ export default function DashboardPage() {
               {/* Card 3: Carga Recomendada en Boxes */}
               <div className="bg-zinc-950/80 border border-[#E10600]/40 rounded-xl p-4">
                 <div className="text-[10px] font-mono text-[#E10600] uppercase tracking-wider font-bold">
-                  RECOMENDACIÓN EN GARAJE (BOXES)
+                  RECOMENDACIÓN EN GARAJE ({sessionLabel.toUpperCase()})
                 </div>
                 <div className="text-3xl font-mono font-bold text-white mt-2">
-                  {Math.ceil(lapsRemaining * avgFuelPerLap + 2.5)}{" "}
-                  <span className="text-xs text-zinc-400 font-normal">litros óptimos</span>
+                  {recommendedTotalFuelL}{" "}
+                  <span className="text-xs text-zinc-400 font-normal">litros en setup</span>
                 </div>
                 <p className="text-xs text-zinc-300 mt-2">
-                  Incluye reserva para batallas, rebufos y vuelta de retorno a boxes sin riesgo de quedarte tirado.
+                  {fuelDiff > 1
+                    ? `Tienes ${fuelRemaining.toFixed(0)}L en el tanque. Debes añadir +${fuelDiff}L en el setup para la sesión.`
+                    : fuelDiff < -4
+                    ? `Tienes ${fuelRemaining.toFixed(0)}L en el tanque. Llevas ${-fuelDiff}L de más (puedes bajar carga para ganar agilidad).`
+                    : `Tienes ${fuelRemaining.toFixed(0)}L en el tanque. Carga óptima para la sesión con ${recommendedSafetyL}L de reserva.`}
                 </p>
               </div>
             </div>

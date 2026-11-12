@@ -1,7 +1,7 @@
 """
 ACC Apex Engineer Pro - Calculador de Estrategia de Combustible y Consumo por Vuelta (fuel_strategy.py)
 Mide el consumo real de combustible por vuelta a 333 Hz, calcula la carga óptima para
-Carrera, Vuelta Rápida (Hotlap) o Clasificación con margen de seguridad dinámico,
+Carrera, Vuelta Rápida (Hotlap), Clasificación o Entrenamientos con margen de seguridad dinámico,
 y genera la comunicación por radio en boxes antes de que el piloto salga a pista.
 """
 
@@ -26,7 +26,7 @@ class FuelStrategyResult:
     speech_text: str           # Mensaje de radio listo para ser emitido por voz de Álvaro
 
 
-# Consumo medio estimado por circuito para GT3 (litros por vuelta) como base inicial
+# Consumo medio base por circuito para coches GT3 (litros por vuelta)
 DEFAULT_GT3_FUEL_PER_LAP: Dict[str, float] = {
     "spa": 3.45,
     "monza": 2.95,
@@ -52,7 +52,35 @@ DEFAULT_GT3_FUEL_PER_LAP: Dict[str, float] = {
     "valencia": 2.35,
     "red_bull_ring": 2.30,
 }
-DEFAULT_FALLBACK_FUEL = 3.10
+DEFAULT_FALLBACK_FUEL = 3.05
+
+# Tiempos de vuelta de referencia representativos para coches GT3 en cada circuito (en segundos)
+DEFAULT_GT3_LAP_TIME_SEC: Dict[str, float] = {
+    "spa": 138.0,            # ~2:18
+    "monza": 108.0,          # ~1:48
+    "silverstone": 119.0,    # ~1:59
+    "nurburgring": 114.0,    # ~1:54
+    "brands_hatch": 84.0,    # ~1:24
+    "misano": 94.0,          # ~1:34
+    "paul_ricard": 114.0,    # ~1:54
+    "zandvoort": 96.0,       # ~1:36
+    "barcelona": 104.0,      # ~1:44
+    "hungaroring": 104.0,    # ~1:44
+    "kyalami": 102.0,        # ~1:42
+    "suzuka": 121.0,         # ~2:01
+    "mount_panorama": 122.0, # ~2:02
+    "laguna_seca": 83.0,     # ~1:23
+    "imola": 102.0,          # ~1:42
+    "donington": 88.0,       # ~1:28
+    "oulton_park": 94.0,     # ~1:34
+    "snetterton": 107.0,     # ~1:47
+    "cota": 125.0,           # ~2:05
+    "indianapolis": 97.0,    # ~1:37
+    "watkins_glen": 105.0,   # ~1:45
+    "valencia": 91.0,        # ~1:31
+    "red_bull_ring": 89.0,   # ~1:29
+}
+DEFAULT_FALLBACK_LAP_SEC = 106.0
 
 
 class FuelStrategyCalculator:
@@ -84,12 +112,28 @@ class FuelStrategyCalculator:
 
         return round(sum(history) / len(history), 2)
 
-    def get_avg_fuel(self, car_model: str, track_name: str) -> float:
-        """Devuelve el consumo medio medido del piloto o el consumo base del circuito."""
+    def get_default_lap_time_sec(self, track_name: str) -> float:
+        """Devuelve el tiempo de vuelta estándar en segundos para el circuito."""
+        track_clean = track_name.lower().replace(" ", "_").replace("-", "_")
+        for k, v in DEFAULT_GT3_LAP_TIME_SEC.items():
+            if k in track_clean:
+                return v
+        return DEFAULT_FALLBACK_LAP_SEC
+
+    def get_avg_fuel(self, car_model: str, track_name: str, sample_fuel_per_lap: float = 0.0) -> float:
+        """
+        Devuelve el consumo medio por vuelta:
+        1. Historial medido real del piloto si existe.
+        2. Consumo nativo reportado por el motor de física de ACC (fuelXLap).
+        3. Base de datos por circuito GT3.
+        """
         key = f"{car_model.lower()}:{track_name.lower()}"
         history = self._fuel_history.get(key)
-        if history:
+        if history and len(history) >= 2:
             return round(sum(history) / len(history), 2)
+
+        if sample_fuel_per_lap and 0.8 <= sample_fuel_per_lap <= 8.5:
+            return round(sample_fuel_per_lap, 2)
 
         track_clean = track_name.lower().replace(" ", "_").replace("-", "_")
         for k, v in DEFAULT_GT3_FUEL_PER_LAP.items():
@@ -134,48 +178,79 @@ class FuelStrategyCalculator:
         self, sample: TelemetrySample, best_lap_ms: int = 0, last_lap_ms: int = 0
     ) -> FuelStrategyResult:
         session_type = sample.session_type
-        avg_fuel = self.get_avg_fuel(sample.car_model, sample.track_name)
+        fuel_xlap = getattr(sample, "fuel_per_lap", 0.0)
+        avg_fuel = self.get_avg_fuel(sample.car_model, sample.track_name, fuel_xlap)
         tank_max = max(100.0, sample.max_fuel if sample.max_fuel > 10.0 else 120.0)
 
-        # Determinar tiempo de vuelta de referencia (en segundos)
-        ref_lap_ms = best_lap_ms if best_lap_ms > 45000 else (last_lap_ms if last_lap_ms > 45000 else 135000)
-        lap_sec = ref_lap_ms / 1000.0
+        # Determinar tiempo de vuelta de referencia real (en segundos)
+        if best_lap_ms > 45000 and best_lap_ms < 600000:
+            lap_sec = best_lap_ms / 1000.0
+        elif last_lap_ms > 45000 and last_lap_ms < 600000:
+            lap_sec = last_lap_ms / 1000.0
+        else:
+            lap_sec = self.get_default_lap_time_sec(sample.track_name)
 
-        # Identificar tipo de sesión:
-        # ACC: 0=PRACTICE, 1=QUALIFY, 2=RACE, 3=HOTLAP
-        if session_type == 3 or (sample.session_time_left <= 0.0 and sample.session_laps <= 0 and session_type != 2):
-            # =================================================================
-            # VUELTA RÁPIDA (HOTLAP) - Mínimo peso posible
-            # =================================================================
+        current_f = round(sample.fuel, 1)
+
+        # =====================================================================
+        # CLASIFICACIÓN DE SESIÓN EN ASSETTO CORSA COMPETIZIONE:
+        # 0 = AC_PRACTICE (Entrenamientos libres / Práctica)
+        # 1 = AC_QUALIFY (Clasificación)
+        # 2 = AC_RACE (Carrera)
+        # 3 = AC_HOTLAP (Vuelta Rápida en solitario)
+        # =====================================================================
+
+        if session_type == 3:
+            # -----------------------------------------------------------------
+            # 1. VUELTA RÁPIDA (HOTLAP) - Mínimo peso para vuelta lanzada
+            # -----------------------------------------------------------------
             session_name = "Vuelta Rápida"
             est_laps = 3  # 1 salida + 2 lanzadas
             safety_l = 2.0
             rec_fuel = min(int(tank_max), max(10, math.ceil(est_laps * avg_fuel + safety_l)))
+            
+            diff = rec_fuel - int(current_f)
+            if diff > 1:
+                action_str = f"Actualmente tienes {current_f:.0f}L; añade {diff} litros en el setup."
+            elif diff < -3:
+                action_str = f"Tienes {current_f:.0f}L en el tanque; llevas {-diff} litros de más para hotlap, baja la carga para reducir peso."
+            else:
+                action_str = f"Tienes {current_f:.0f}L en el tanque, peso óptimo para salir a marcar tiempo."
+
             speech = (
-                f"Estamos en boxes para Vuelta Rápida. Te recomiendo cargar exactamente {rec_fuel} litros de combustible: "
-                f"3 vueltas a {avg_fuel:.1f} litros por vuelta, con 2 litros de margen de seguridad para salir al mínimo peso."
+                f"Estamos en boxes para Vuelta Rápida. Carga recomendada: {rec_fuel} litros en el tanque "
+                f"para 3 vueltas a {avg_fuel:.1f} litros por vuelta. {action_str}"
             )
 
         elif session_type == 1:
-            # =================================================================
-            # CLASIFICACIÓN (QUALIFYING) - Tanda de ataque de 4-5 vueltas
-            # =================================================================
+            # -----------------------------------------------------------------
+            # 2. CLASIFICACIÓN (QUALIFYING) - Tanda de ataque de 4 a 5 vueltas
+            # -----------------------------------------------------------------
             session_name = "Clasificación"
-            est_laps = 4  # 1 salida + 2 lanzadas + 1 retorno
+            est_laps = 5  # 1 de salida + 3 vueltas lanzadas + 1 de regreso a boxes
             safety_l = 2.5
             rec_fuel = min(int(tank_max), max(14, math.ceil(est_laps * avg_fuel + safety_l)))
+
+            diff = rec_fuel - int(current_f)
+            if diff > 1:
+                action_str = f"Actualmente tienes {current_f:.0f}L; necesitas {diff} litros más para la tanda completa."
+            elif diff < -4:
+                action_str = f"Tienes {current_f:.0f}L; vas pesado por {-diff} litros extras, baja la carga en el setup para mejorar aceleración."
+            else:
+                action_str = f"Tienes {current_f:.0f}L en el tanque, carga adecuada para tu tanda de clasificación."
+
             speech = (
-                f"Estamos en boxes para Clasificación. Para tu tanda de ataque necesitas exactamente {rec_fuel} litros de combustible: "
-                f"4 vueltas con {safety_l:.1f} litros de reserva de seguridad."
+                f"Estamos en boxes para Clasificación. Para tu tanda de ataque de 5 vueltas necesitas {rec_fuel} litros en el tanque "
+                f"a {avg_fuel:.1f} litros por vuelta con reserva de seguridad. {action_str}"
             )
 
         elif session_type == 2:
-            # =================================================================
-            # CARRERA (RACE) - Duración en minutos o número de vueltas
-            # =================================================================
+            # -----------------------------------------------------------------
+            # 3. CARRERA (RACE) - Cálculo exacto por tiempo o número de vueltas
+            # -----------------------------------------------------------------
             session_name = "Carrera"
-            if sample.session_time_left > 10.0:
-                # Carrera por tiempo (ej. 20m, 30m, 60m)
+            if sample.session_time_left > 15.0:
+                # Carrera por tiempo (ej: 20m, 30m, 60m)
                 time_laps = sample.session_time_left / lap_sec
                 # +1 porque el líder cruza la meta tras el 0:00 + 1 vuelta de formación
                 est_laps = math.ceil(time_laps) + 1
@@ -185,32 +260,58 @@ class FuelStrategyCalculator:
                 # Carrera por vueltas fijas
                 remaining = sample.session_laps - sample.completed_laps
                 est_laps = max(1, remaining)
-                duration_str = f"las {est_laps} vueltas restantes de carrera"
+                duration_str = f"las {est_laps} vueltas de carrera"
             else:
-                est_laps = 12
-                duration_str = "la carrera"
+                # Si estamos en parrilla o garaje antes de que arranque el reloj oficial de carrera
+                est_laps = math.ceil(1200.0 / lap_sec) + 1  # Sprint estándar de 20 minutos
+                duration_str = "la carrera (sprint proyectado de 20 minutos)"
 
-            # Margen de seguridad: 1.5 vueltas de consumo extra para batallas, rebufo o ritmo elevado
+            # Margen de seguridad: 1.5 vueltas de consumo extra para batallas, rebufos y vuelta de honor
             safety_l = round(avg_fuel * 1.5, 1)
             raw_target = (est_laps * avg_fuel) + safety_l
             rec_fuel = min(int(tank_max), math.ceil(raw_target))
 
+            diff = rec_fuel - int(current_f)
+            if diff > 1:
+                action_str = f"Actualmente tienes {current_f:.0f}L; te faltan {diff} litros para llegar al final sin quedarte tirado."
+            elif diff < -5:
+                action_str = f"Tienes {current_f:.0f}L en el tanque; vas sobrado por {-diff} litros de combustible."
+            else:
+                action_str = f"Tienes {current_f:.0f}L en el tanque, carga exacta para completar la carrera."
+
             speech = (
-                f"Estamos en boxes para la Carrera. Para {duration_str} necesitas exactamente {rec_fuel} litros en el tanque: "
-                f"{est_laps} vueltas a {avg_fuel:.1f} litros por vuelta, incluyendo {safety_l:.1f} litros de margen de seguridad."
+                f"Estamos en boxes para la Carrera. Para {duration_str} ({est_laps} vueltas a {avg_fuel:.1f} L/vta) "
+                f"necesitas exactamente {rec_fuel} litros en el tanque, incluyendo {safety_l:.1f}L de margen de seguridad. {action_str}"
             )
 
         else:
-            # =================================================================
-            # ENTRENAMIENTOS / PRÁCTICA
-            # =================================================================
+            # -----------------------------------------------------------------
+            # 4. ENTRENAMIENTOS / PRÁCTICA (PRACTICE) - Tanda estándar de 8 vueltas
+            # -----------------------------------------------------------------
             session_name = "Entrenamientos"
-            est_laps = 6
+            if sample.session_time_left > 180.0:
+                mins_left = int(round(sample.session_time_left / 60.0))
+                # Tanda de práctica: entre 6 y 10 vueltas para testear setup y presiones
+                est_laps = min(10, max(6, math.ceil(sample.session_time_left / lap_sec * 0.4)))
+                duration_str = f"una tanda de {est_laps} vueltas ({mins_left} min restantes en sesión)"
+            else:
+                est_laps = 8
+                duration_str = "una tanda de 8 vueltas"
+
             safety_l = 3.0
             rec_fuel = min(int(tank_max), math.ceil(est_laps * avg_fuel + safety_l))
+
+            diff = rec_fuel - int(current_f)
+            if diff > 1:
+                action_str = f"Actualmente tienes {current_f:.0f}L; te faltan {diff} litros para el stint completo."
+            elif diff < -5:
+                action_str = f"Tienes {current_f:.0f}L en el tanque; tienes combustible suficiente para continuar rodando."
+            else:
+                action_str = f"Tienes {current_f:.0f}L en el tanque, carga ideal para rodar y calentar gomas."
+
             speech = (
-                f"Estamos en boxes para Entrenamientos. Te recomiendo salir con {rec_fuel} litros de combustible "
-                f"para una tanda de 6 vueltas con margen de seguridad."
+                f"Estamos en boxes para Entrenamientos. Te recomiendo salir con {rec_fuel} litros en el tanque "
+                f"para {duration_str} a {avg_fuel:.1f} litros por vuelta. {action_str}"
             )
 
         return FuelStrategyResult(
@@ -220,7 +321,6 @@ class FuelStrategyCalculator:
             estimated_laps=est_laps,
             safety_liters=safety_l,
             recommended_fuel_l=rec_fuel,
-            current_fuel_l=round(sample.fuel, 1),
+            current_fuel_l=current_f,
             speech_text=speech,
         )
-

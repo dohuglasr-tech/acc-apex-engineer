@@ -37,6 +37,7 @@ export interface TelemetryFrame {
   brake: number;
   steer_angle: number;
   fuel: number;
+  fuel_per_lap?: number;
   tyre_pressures: [number, number, number, number];
   tyre_temps_core: [number, number, number, number];
   tyre_temps_imo?: [

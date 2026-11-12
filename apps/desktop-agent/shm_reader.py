@@ -277,6 +277,7 @@ class TelemetrySample:
     brake: float
     steer_angle: float
     fuel: float
+    fuel_per_lap: float = 0.0
     tyre_pressures: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
     tyre_temps_core: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0, 0.0])
     tyre_temps_imo: List[List[float]] = field(
@@ -372,6 +373,7 @@ class TelemetrySample:
             "brake": round(self.brake, 3),
             "steer_angle": round(self.steer_angle, 3),
             "fuel": round(self.fuel, 1),
+            "fuel_per_lap": round(self.fuel_per_lap, 2),
             "tyre_pressures": [round(x, 2) for x in self.tyre_pressures],
             "tyre_temps_core": [round(x, 1) for x in self.tyre_temps_core],
             "tyre_temps_imo": [
@@ -697,6 +699,9 @@ class ACCSharedMemoryReader:
             raw_curr = int(gfx.iCurrentTime) if gfx else 0
             valid_curr = raw_curr if (0 <= raw_curr < 1800000) else 0
 
+            raw_fuel_x_lap = float(getattr(gfx, "fuelXLap", 0.0)) if gfx else 0.0
+            valid_fuel_x_lap = raw_fuel_x_lap if (0.8 <= raw_fuel_x_lap <= 9.0) else 0.0
+
             return TelemetrySample(
                 timestamp=now,
                 is_live_acc=True,
@@ -726,6 +731,7 @@ class ACCSharedMemoryReader:
                 brake=max(0.0, min(1.0, float(phys.brake))),
                 steer_angle=float(phys.steerAngle),
                 fuel=max(0.0, float(phys.fuel)),
+                fuel_per_lap=valid_fuel_x_lap,
                 tyre_pressures=[float(phys.wheelsPressure[i]) for i in range(4)],
                 tyre_temps_core=core_temps,
                 tyre_temps_imo=imo_temps,
