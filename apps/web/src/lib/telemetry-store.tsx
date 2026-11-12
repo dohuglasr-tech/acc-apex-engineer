@@ -65,6 +65,9 @@ export interface TelemetryFrame {
   air_temp: number;
   road_temp: number;
   brake_bias: number;
+  session_type?: number;
+  session_time_left?: number;
+  session_laps?: number;
   tyres_out?: number;
   is_off_track?: boolean;
   tyre_dirty_level?: [number, number, number, number];
